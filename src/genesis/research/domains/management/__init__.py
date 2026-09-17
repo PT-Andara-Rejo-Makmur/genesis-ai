@@ -1,0 +1,1 @@
+"""Management research domain profile."""

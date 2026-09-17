@@ -1,0 +1,37 @@
+name: Kualitas GENESIS
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Siapkan Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Pasang dependency dan framework adapter
+        run: python -m pip install -e ".[dev,frameworks]"
+
+      - name: Ruff
+        run: ruff check .
+
+      - name: Mypy
+        run: mypy
+
+      - name: Pytest dan architecture checks
+        run: pytest
+
+      - name: Uji import aplikasi
+        run: python -c "from genesis.main import app; assert app.title == 'GENESIS AI Control Plane'"

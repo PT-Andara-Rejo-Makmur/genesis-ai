@@ -1,0 +1,6 @@
+# Ganti placeholder dengan user atau tim GitHub yang sebenarnya.
+* @AI_OWNER
+/src/genesis/adapters/ @AI_OWNER @BE_OWNER
+/src/genesis/model_gateway/ @AI_OWNER @BE_OWNER
+/src/genesis/api/ @AI_OWNER @BE_OWNER
+/src/genesis/reviews/ @AI_OWNER @BE_OWNER
