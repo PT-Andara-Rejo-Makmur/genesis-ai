@@ -47,7 +47,7 @@ async def analyze_factory(
     """Produce canonical drafts; never register, approve, or release them."""
 
     correlation_id = current_correlation_id()
-    if payload.requirement.correlation_id != correlation_id:
+    if payload.requirement.execution_context.correlation_id != correlation_id:
         raise InternalBoundaryError(
             "CORRELATION_ID_MISMATCH",
             "Payload correlation_id must match X-Correlation-ID.",

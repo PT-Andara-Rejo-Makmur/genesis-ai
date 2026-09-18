@@ -6,25 +6,25 @@ import hashlib
 import re
 from typing import Literal
 
-from genesis.capabilities.resolver import CapabilityResolution, CapabilityResolver
+from genesis.capabilities.resolver import CapabilityResolution, CapabilityResolver, Requirement
 from genesis.contracts import CanonicalContractCatalog
 from genesis.control_plane.factory.models import (
-    DraftSpecification,
+    AgentDraft,
     FactoryAnalysisRequest,
     FactoryAnalysisResult,
     RegistryHandoff,
-    StructuredAgentProposal,
 )
 from genesis.control_plane.factory.prompts import version_prompt
-from genesis.evals import (
-    EvaluationCase,
-    EvaluationPlan,
-    EvaluationTaxonomy,
-    RiskBasedTestProfile,
-)
 
 CAPABILITY_DRAFT_SCHEMA = "https://schemas.alos.dev/v1/capability/capability-draft.schema.json"
 AGENT_DEFINITION_SCHEMA = "https://schemas.alos.dev/v1/agent/agent-definition.schema.json"
+AGENT_DRAFT_SCHEMA = "https://schemas.alos.dev/v1/agent/agent-draft.schema.json"
+FACTORY_RESULT_SCHEMA = (
+    "https://schemas.alos.dev/v1/factory/factory-analysis-result.schema.json"
+)
+FACTORY_REQUEST_SCHEMA = (
+    "https://schemas.alos.dev/v1/factory/factory-analysis-request.schema.json"
+)
 
 _AGENT_PROMPT = version_prompt(
     prompt_id="genesis.agent-definition",
@@ -57,20 +57,27 @@ class CapabilityFactory:
         self._resolver = resolver or CapabilityResolver()
 
     def analyze(self, request: FactoryAnalysisRequest) -> FactoryAnalysisResult:
-        requirement = request.requirement
+        self._contracts.validate(
+            FACTORY_REQUEST_SCHEMA,
+            request.model_dump(mode="json", exclude_none=True),
+        )
+        requirement = request.requirement.to_resolver_requirement()
         resolution = self._resolver.resolve(requirement, request.capability_catalog)
         if resolution.decision == "REUSE":
             requested = set(resolution.understanding.candidate_capability_ids)
             references = tuple(
                 item for item in resolution.resolved if item.capability_id in requested
             )
-            return FactoryAnalysisResult(
-                correlation_id=requirement.correlation_id,
-                resolution=resolution,
-                existing_capability_refs=references,
-                evidence_requirements=resolution.evidence_requirements,
-                missing_dependencies=(),
-                handoff=RegistryHandoff(requested_operations=()),
+            return self._validated_result(
+                FactoryAnalysisResult(
+                    correlation_id=requirement.correlation_id,
+                    resolution=resolution,
+                    existing_capability_refs=references,
+                    capability_draft=None,
+                    agent_draft=None,
+                    missing_dependencies=(),
+                    handoff=RegistryHandoff(requested_operations=()),
+                )
             )
 
         digest = hashlib.sha256(requirement.statement.encode("utf-8")).hexdigest()[:16]
@@ -79,14 +86,24 @@ class CapabilityFactory:
             CAPABILITY_DRAFT_SCHEMA,
             {
                 "tenant_id": requirement.tenant_id,
+                "organization_id": requirement.organization_id,
                 "workspace_id": requirement.workspace_id,
                 "correlation_id": requirement.correlation_id,
                 "capability_id": capability_id,
+                "version": "0.1.0",
                 "name": self._name(requirement.statement, "Capability"),
                 "purpose": requirement.statement.strip(),
                 "owner": requirement.actor_id,
                 "capability_type": resolution.understanding.recommended_type.value,
                 "output_state": "DRAFT",
+                "lifecycle_state": "DRAFT",
+                "scope_refs": list(resolution.scope_refs),
+                "tool_ids": list(resolution.required_tool_ids),
+                "permission_refs": list(resolution.required_permission_refs),
+                "prohibited_actions": list(_PROHIBITED_ACTIONS),
+                "risk_level": resolution.understanding.risk_level,
+                "evidence_requirements": list(resolution.evidence_requirements),
+                "test_requirements": list(resolution.test_requirements),
                 "constraints": [
                     "Backend registry and governance approval are required before activation.",
                     "Business tools may execute only through Backend ToolExecutor.",
@@ -94,26 +111,11 @@ class CapabilityFactory:
                 ],
             },
         )
-        evidence_requirements = resolution.evidence_requirements
-        capability_specification = DraftSpecification(
-            identifier=capability_id,
-            version="0.1.0",
-            purpose=requirement.statement.strip(),
-            capability_type=resolution.understanding.recommended_type,
-            scope_refs=resolution.scope_refs,
-            tool_ids=resolution.required_tool_ids,
-            permission_refs=resolution.required_permission_refs,
-            prohibited_actions=_PROHIBITED_ACTIONS,
-            risk_level=resolution.understanding.risk_level,
-            evidence_requirements=evidence_requirements,
-            test_requirements=resolution.test_requirements,
-        )
-        agent_proposal = (
-            self._agent_proposal(
-                request=request,
+        agent_draft = (
+            self._agent_draft(
+                requirement=requirement,
                 capability_id=capability_id,
                 resolution=resolution,
-                evidence_requirements=evidence_requirements,
                 digest=digest,
             )
             if resolution.understanding.requires_agent
@@ -126,30 +128,28 @@ class CapabilityFactory:
                 "START_GOVERNANCE",
             ]
         ] = ["REGISTER_CAPABILITY_DRAFT"]
-        if agent_proposal is not None:
+        if agent_draft is not None:
             operations.extend(("REGISTER_AGENT_DRAFT", "START_GOVERNANCE"))
-        return FactoryAnalysisResult(
-            correlation_id=requirement.correlation_id,
-            resolution=resolution,
-            existing_capability_refs=(),
-            capability_draft=capability_draft,
-            capability_specification=capability_specification,
-            agent_proposal=agent_proposal,
-            evidence_requirements=evidence_requirements,
-            missing_dependencies=resolution.missing_capability_ids,
-            handoff=RegistryHandoff(requested_operations=tuple(operations)),
+        return self._validated_result(
+            FactoryAnalysisResult(
+                correlation_id=requirement.correlation_id,
+                resolution=resolution,
+                existing_capability_refs=(),
+                capability_draft=capability_draft,
+                agent_draft=agent_draft,
+                missing_dependencies=resolution.missing_capability_ids,
+                handoff=RegistryHandoff(requested_operations=tuple(operations)),
+            )
         )
 
-    def _agent_proposal(
+    def _agent_draft(
         self,
         *,
-        request: FactoryAnalysisRequest,
+        requirement: Requirement,
         capability_id: str,
         resolution: CapabilityResolution,
-        evidence_requirements: tuple[str, ...],
         digest: str,
-    ) -> StructuredAgentProposal:
-        requirement = request.requirement
+    ) -> AgentDraft:
         risk = resolution.understanding.risk_level
         agent_id = f"agent_{digest}"
         prompt = _AGENT_PROMPT.render(objective=requirement.statement.strip())
@@ -194,7 +194,8 @@ class CapabilityFactory:
                 },
                 "tool_ids": list(resolution.required_tool_ids),
                 "permission_refs": list(resolution.required_permission_refs),
-                "evidence_requirements": list(evidence_requirements),
+                "scope_refs": list(resolution.scope_refs),
+                "evidence_requirements": list(resolution.evidence_requirements),
                 "restrictions": [
                     "No direct database access.",
                     "No direct provider access outside ModelGateway.",
@@ -222,106 +223,34 @@ class CapabilityFactory:
                 },
             },
         )
-        test_plan = self._test_plan(
-            agent_id,
-            capability_id,
-            risk,
-            bool(resolution.required_tool_ids),
+        payload = self._contracts.validate(
+            AGENT_DRAFT_SCHEMA,
+            {
+                "draft_id": f"draft_{digest}",
+                "tenant_id": requirement.tenant_id,
+                "organization_id": requirement.organization_id,
+                "workspace_id": requirement.workspace_id,
+                "correlation_id": requirement.correlation_id,
+                "agent_id": agent_id,
+                "version": "0.1.0",
+                "purpose": requirement.statement.strip(),
+                "capability_type": "AGENT",
+                "scope_refs": list(resolution.scope_refs),
+                "tool_ids": list(resolution.required_tool_ids),
+                "permission_refs": list(resolution.required_permission_refs),
+                "prohibited_actions": list(_PROHIBITED_ACTIONS),
+                "risk_level": risk,
+                "evidence_requirements": list(resolution.evidence_requirements),
+                "test_requirements": list(resolution.test_requirements),
+                "lifecycle_state": "DRAFT",
+                "agent_definition": definition,
+            },
         )
-        return StructuredAgentProposal(
-            draft_id=f"draft_{digest}",
-            specification=DraftSpecification(
-                identifier=agent_id,
-                version="0.1.0",
-                purpose=requirement.statement.strip(),
-                capability_type=resolution.understanding.recommended_type,
-                scope_refs=resolution.scope_refs,
-                tool_ids=resolution.required_tool_ids,
-                permission_refs=resolution.required_permission_refs,
-                prohibited_actions=_PROHIBITED_ACTIONS,
-                risk_level=risk,
-                evidence_requirements=evidence_requirements,
-                test_requirements=resolution.test_requirements,
-            ),
-            agent_definition=definition,
-            prompt_id=_AGENT_PROMPT.prompt_id,
-            prompt_version=_AGENT_PROMPT.version,
-            prompt_sha256=_AGENT_PROMPT.sha256,
-            test_plan=test_plan,
-        )
+        return AgentDraft.model_validate(payload)
 
-    @staticmethod
-    def _test_plan(
-        agent_id: str,
-        capability_id: str,
-        risk_level: str,
-        uses_tools: bool,
-    ) -> EvaluationPlan:
-        required = {EvaluationTaxonomy.POSITIVE, EvaluationTaxonomy.NEGATIVE}
-        if uses_tools or risk_level in {"MEDIUM", "HIGH", "CRITICAL"}:
-            required.add(EvaluationTaxonomy.SECURITY)
-            required.add(EvaluationTaxonomy.RECOVERY)
-        if risk_level in {"HIGH", "CRITICAL"}:
-            required.add(EvaluationTaxonomy.REGRESSION)
-        cases = [
-            EvaluationCase(
-                test_id=f"{agent_id}_positive",
-                taxonomy=EvaluationTaxonomy.POSITIVE,
-                input_fixture={"request": "authorized fixture"},
-                expected_status="SUCCESS",
-                assertions=("output schema is valid", "evidence references are present"),
-            ),
-            EvaluationCase(
-                test_id=f"{agent_id}_negative",
-                taxonomy=EvaluationTaxonomy.NEGATIVE,
-                input_fixture={"request": "unauthorized fixture"},
-                expected_status="DENIED",
-                expected_error_code="AUTHORIZATION_DENIED",
-                assertions=("actual denial must match expected error code",),
-            ),
-        ]
-        if EvaluationTaxonomy.SECURITY in required:
-            cases.append(
-                EvaluationCase(
-                    test_id=f"{agent_id}_security",
-                    taxonomy=EvaluationTaxonomy.SECURITY,
-                    input_fixture={"scope_ref": "scope.outside-authority"},
-                    expected_status="DENIED",
-                    expected_error_code="SCOPE_DENIED",
-                    assertions=("no cross-scope data is returned",),
-                )
-            )
-        if EvaluationTaxonomy.RECOVERY in required:
-            cases.append(
-                EvaluationCase(
-                    test_id=f"{agent_id}_recovery",
-                    taxonomy=EvaluationTaxonomy.RECOVERY,
-                    input_fixture={"simulate": "backend_timeout"},
-                    expected_status="FAILED",
-                    expected_error_code="BACKEND_UNAVAILABLE",
-                    assertions=("failure is structured", "retry remains bounded"),
-                )
-            )
-        if EvaluationTaxonomy.REGRESSION in required:
-            cases.append(
-                EvaluationCase(
-                    test_id=f"{agent_id}_regression",
-                    taxonomy=EvaluationTaxonomy.REGRESSION,
-                    input_fixture={"fixture_version": "v1"},
-                    expected_status="SUCCESS",
-                    assertions=("stable fixture remains compatible",),
-                )
-            )
-        return EvaluationPlan(
-            profile=RiskBasedTestProfile(
-                profile_id=f"profile_{agent_id}",
-                capability_id=capability_id,
-                risk_level=risk_level,
-                required_taxonomies=frozenset(required),
-                rationale="Risk-based categories derived from tool use and proposed risk.",
-            ),
-            cases=tuple(cases),
-        )
+    def _validated_result(self, result: FactoryAnalysisResult) -> FactoryAnalysisResult:
+        self._contracts.validate(FACTORY_RESULT_SCHEMA, result.model_dump(mode="json"))
+        return result
 
     @staticmethod
     def _name(statement: str, suffix: str) -> str:

@@ -2,27 +2,85 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from genesis.capabilities import CapabilityDefinition
 from genesis.capabilities.models.definition import CapabilityType
 from genesis.capabilities.resolver import (
     CapabilityCatalogItem,
     CapabilityResolution,
     Requirement,
 )
-from genesis.evals import EvaluationPlan
 
 RiskLevel = Literal["LOW", "MEDIUM", "HIGH", "CRITICAL"]
+DataClassification = Literal["PUBLIC", "INTERNAL", "CONFIDENTIAL", "RESTRICTED"]
 
 
-class DraftSpecification(BaseModel):
-    """Non-authoritative proposal details missing from the current canonical draft schema."""
+class AuthorityContext(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    role: str = Field(min_length=1)
+    role_refs: tuple[str, ...] = ()
+    authority_level: Literal[
+        "REQUESTER", "OPERATOR", "IT_APPROVER", "DIRECTOR_APPROVER", "SYSTEM"
+    ] | None = None
+
+
+class FactoryExecutionContext(BaseModel):
+    """Canonical Backend-owned ExecutionContext projection."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
-    identifier: str = Field(min_length=3)
+    tenant_id: str = Field(min_length=3, max_length=128)
+    organization_id: str = Field(min_length=3, max_length=128)
+    workspace_id: str = Field(min_length=3, max_length=128)
+    actor_id: str = Field(min_length=3, max_length=128)
+    authority_context: AuthorityContext
+    permission_refs: tuple[str, ...] = ()
+    scope_refs: tuple[str, ...] = Field(min_length=1)
+    data_classification: DataClassification
+    correlation_id: str = Field(min_length=3, max_length=128)
+    execution_budget: dict[str, Any] | None = None
+
+
+class FactoryRequirement(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    execution_context: FactoryExecutionContext
+    statement: str = Field(min_length=20, max_length=10_000)
+    preferred_capability_type: CapabilityType | None = None
+
+    def to_resolver_requirement(self) -> Requirement:
+        context = self.execution_context
+        return Requirement(
+            tenant_id=context.tenant_id,
+            organization_id=context.organization_id,
+            workspace_id=context.workspace_id,
+            actor_id=context.actor_id,
+            correlation_id=context.correlation_id,
+            statement=self.statement,
+            scope_refs=context.scope_refs,
+            permission_refs=context.permission_refs,
+            data_classification=context.data_classification,
+            preferred_capability_type=self.preferred_capability_type,
+        )
+
+
+class FactoryAnalysisRequest(BaseModel):
+    """Backend-supplied requirement plus read-only authoritative catalog snapshot."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    requirement: FactoryRequirement
+    capability_catalog: tuple[CapabilityCatalogItem, ...] = ()
+
+
+class AgentDraft(BaseModel):
+    """Canonical non-authoritative Agent draft for Backend governance."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    draft_id: str = Field(min_length=3)
+    tenant_id: str = Field(min_length=3)
+    organization_id: str = Field(min_length=3)
+    workspace_id: str = Field(min_length=3)
+    correlation_id: str = Field(min_length=3)
+    agent_id: str = Field(min_length=3)
     version: str = Field(pattern=r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$")
-    lifecycle_state: Literal["DRAFT"] = "DRAFT"
     purpose: str = Field(min_length=1)
-    capability_type: CapabilityType
+    capability_type: Literal[CapabilityType.AGENT] = CapabilityType.AGENT
     scope_refs: tuple[str, ...] = Field(min_length=1)
     tool_ids: tuple[str, ...] = ()
     permission_refs: tuple[str, ...] = ()
@@ -30,39 +88,8 @@ class DraftSpecification(BaseModel):
     risk_level: RiskLevel
     evidence_requirements: tuple[str, ...] = Field(min_length=1)
     test_requirements: tuple[str, ...] = Field(min_length=1)
-
-
-class CapabilityFactoryProposal(BaseModel):
-    """A proposal only; ALOS Backend owns registry activation."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-    proposal_id: str = Field(min_length=3)
-    requirement: str = Field(min_length=1)
-    capability: CapabilityDefinition
-    rationale: str = Field(min_length=1)
-    evidence_refs: tuple[str, ...] = ()
-
-
-class FactoryAnalysisRequest(BaseModel):
-    """Backend-supplied requirement plus read-only authoritative catalog snapshot."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-    requirement: Requirement
-    capability_catalog: tuple[CapabilityCatalogItem, ...] = ()
-
-
-class StructuredAgentProposal(BaseModel):
-    """A draft proposal only; it cannot approve or activate itself."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-    draft_id: str
-    status: Literal["DRAFT"] = "DRAFT"
-    specification: DraftSpecification
+    lifecycle_state: Literal["DRAFT"] = "DRAFT"
     agent_definition: dict[str, Any]
-    prompt_id: str
-    prompt_version: str
-    prompt_sha256: str
-    test_plan: EvaluationPlan
 
 
 type RegistryOperation = Literal[
@@ -84,8 +111,6 @@ class FactoryAnalysisResult(BaseModel):
     resolution: CapabilityResolution
     existing_capability_refs: tuple[CapabilityCatalogItem, ...] = ()
     capability_draft: dict[str, Any] | None = None
-    capability_specification: DraftSpecification | None = None
-    agent_proposal: StructuredAgentProposal | None = None
-    evidence_requirements: tuple[str, ...]
+    agent_draft: AgentDraft | None = None
     missing_dependencies: tuple[str, ...]
     handoff: RegistryHandoff

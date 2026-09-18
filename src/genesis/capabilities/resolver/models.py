@@ -30,6 +30,7 @@ class CapabilityCatalogItem(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
     capability_id: str = Field(min_length=3, max_length=128)
+    version: str = Field(pattern=r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$")
     name: str = Field(min_length=1)
     purpose: str = Field(min_length=1)
     capability_type: CapabilityType

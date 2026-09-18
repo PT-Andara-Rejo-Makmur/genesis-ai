@@ -101,15 +101,21 @@ async def test_factory_endpoint_returns_draft_without_authoritative_write(
         },
         json={
             "requirement": {
-                "tenant_id": "tenant_api",
-                "organization_id": "organization_api",
-                "workspace_id": "workspace_api",
-                "actor_id": "actor_api",
-                "correlation_id": correlation_id,
+                "execution_context": {
+                    "tenant_id": "tenant_api",
+                    "organization_id": "organization_api",
+                    "workspace_id": "workspace_api",
+                    "actor_id": "actor_api",
+                    "authority_context": {
+                        "role": "REQUESTER",
+                        "authority_level": "REQUESTER",
+                    },
+                    "correlation_id": correlation_id,
+                    "scope_refs": ["scope.workspace"],
+                    "permission_refs": ["document.read"],
+                    "data_classification": "INTERNAL",
+                },
                 "statement": "Rancang agent untuk menganalisis dokumen internal secara aman",
-                "scope_refs": ["scope.workspace"],
-                "permission_refs": ["document.read"],
-                "data_classification": "INTERNAL",
             },
             "capability_catalog": [],
         },
@@ -118,7 +124,8 @@ async def test_factory_endpoint_returns_draft_without_authoritative_write(
     assert response.status_code == 200
     payload = response.json()
     assert payload["correlation_id"] == correlation_id
-    assert payload["agent_proposal"]["status"] == "DRAFT"
+    assert payload["agent_draft"]["lifecycle_state"] == "DRAFT"
+    assert payload["capability_draft"]["lifecycle_state"] == "DRAFT"
     assert payload["handoff"]["authoritative_state_changed"] is False
     assert payload["handoff"]["target_service"] == "alos-backend"
 
@@ -135,14 +142,22 @@ async def test_factory_endpoint_rejects_correlation_mismatch(
         },
         json={
             "requirement": {
-                "tenant_id": "tenant_api",
-                "organization_id": "organization_api",
-                "workspace_id": "workspace_api",
-                "actor_id": "actor_api",
-                "correlation_id": "corr_payload_001",
+                "execution_context": {
+                    "tenant_id": "tenant_api",
+                    "organization_id": "organization_api",
+                    "workspace_id": "workspace_api",
+                    "actor_id": "actor_api",
+                    "authority_context": {
+                        "role": "REQUESTER",
+                        "authority_level": "REQUESTER",
+                    },
+                    "correlation_id": "corr_payload_001",
+                    "scope_refs": ["scope.workspace"],
+                    "data_classification": "INTERNAL",
+                },
                 "statement": "Rancang capability untuk menganalisis dokumen secara aman",
-                "scope_refs": ["scope.workspace"],
-            }
+            },
+            "capability_catalog": [],
         },
     )
 
@@ -153,6 +168,42 @@ async def test_factory_endpoint_rejects_correlation_mismatch(
         "correlation_id": "corr_header_001",
         "retryable": False,
     }
+
+
+@pytest.mark.asyncio
+async def test_factory_endpoint_returns_structured_error_for_invalid_context(
+    client: httpx.AsyncClient,
+) -> None:
+    correlation_id = "corr_invalid_factory_context_001"
+    response = await client.post(
+        "/internal/v1/factory/analyze",
+        headers={
+            "Authorization": "Bearer test-only-token",
+            "X-Correlation-ID": correlation_id,
+        },
+        json={
+            "requirement": {
+                "execution_context": {
+                    "tenant_id": "tenant_api",
+                    "organization_id": "organization_api",
+                    "workspace_id": "workspace_api",
+                    "actor_id": "actor_api",
+                    "correlation_id": correlation_id,
+                    "scope_refs": ["scope.workspace"],
+                    "data_classification": "INTERNAL",
+                },
+                "statement": "Rancang capability untuk menganalisis dokumen secara aman",
+            },
+            "capability_catalog": [],
+        },
+    )
+
+    assert response.status_code == 422
+    payload = response.json()
+    assert payload["code"] == "REQUEST_VALIDATION_FAILED"
+    assert payload["correlation_id"] == correlation_id
+    assert payload["retryable"] is False
+    assert payload["details"]["errors"]
 
 
 @pytest.mark.asyncio

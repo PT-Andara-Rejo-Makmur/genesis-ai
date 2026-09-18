@@ -1,19 +1,21 @@
 from genesis.control_plane.factory.models import (
-    CapabilityFactoryProposal,
-    DraftSpecification,
+    AgentDraft,
+    AuthorityContext,
     FactoryAnalysisRequest,
     FactoryAnalysisResult,
+    FactoryExecutionContext,
+    FactoryRequirement,
     RegistryHandoff,
-    StructuredAgentProposal,
 )
 from genesis.control_plane.factory.service import CapabilityFactory
 
 __all__ = [
+    "AgentDraft",
+    "AuthorityContext",
     "CapabilityFactory",
-    "CapabilityFactoryProposal",
-    "DraftSpecification",
     "FactoryAnalysisRequest",
     "FactoryAnalysisResult",
+    "FactoryExecutionContext",
+    "FactoryRequirement",
     "RegistryHandoff",
-    "StructuredAgentProposal",
 ]

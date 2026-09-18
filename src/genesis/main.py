@@ -4,6 +4,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from genesis.api.auth import InternalAuthError
@@ -60,6 +61,31 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "message": exc.message,
                 "correlation_id": current_correlation_id(),
                 "retryable": exc.status_code >= 500,
+            },
+        )
+
+    @app.exception_handler(RequestValidationError)
+    async def handle_request_validation_error(
+        _request: Request, exc: RequestValidationError
+    ) -> JSONResponse:
+        from genesis.observability.correlation import current_correlation_id
+
+        errors = [
+            {
+                "path": ".".join(str(part) for part in error["loc"]),
+                "reason": error["msg"],
+                "type": error["type"],
+            }
+            for error in exc.errors()
+        ]
+        return JSONResponse(
+            status_code=422,
+            content={
+                "code": "REQUEST_VALIDATION_FAILED",
+                "message": "Request does not satisfy the canonical service contract.",
+                "details": {"errors": errors},
+                "correlation_id": current_correlation_id(),
+                "retryable": False,
             },
         )
 

@@ -7,7 +7,6 @@ from genesis.capabilities import CapabilityType
 from genesis.capabilities.resolver import CapabilityCatalogItem, CapabilityResolver, Requirement
 from genesis.contracts import CanonicalContractCatalog
 from genesis.control_plane.factory import CapabilityFactory, FactoryAnalysisRequest
-from genesis.evals import EvaluationTaxonomy
 
 CONTRACTS_ROOT = Path(__file__).resolve().parents[3] / "alos-contracts"
 
@@ -29,28 +28,53 @@ def factory() -> CapabilityFactory:
     return CapabilityFactory(contracts=CanonicalContractCatalog(CONTRACTS_ROOT))
 
 
+def factory_request(
+    statement: str,
+    capability_catalog: tuple[CapabilityCatalogItem, ...] = (),
+) -> FactoryAnalysisRequest:
+    return FactoryAnalysisRequest.model_validate(
+        {
+            "requirement": {
+                "execution_context": {
+                    "tenant_id": "tenant_demo",
+                    "organization_id": "organization_demo",
+                    "workspace_id": "workspace_demo",
+                    "actor_id": "actor_demo",
+                    "authority_context": {
+                        "role": "REQUESTER",
+                        "authority_level": "REQUESTER",
+                    },
+                    "permission_refs": ["document.read"],
+                    "scope_refs": ["scope.workspace"],
+                    "data_classification": "INTERNAL",
+                    "correlation_id": "corr_factory_001",
+                },
+                "statement": statement,
+            },
+            "capability_catalog": [item.model_dump(mode="json") for item in capability_catalog],
+        }
+    )
+
+
 def test_capability_first_does_not_force_report_into_agent() -> None:
     result = factory().analyze(
-        FactoryAnalysisRequest(
-            requirement=requirement(
-                "Buat laporan ringkas mengenai status operasional perusahaan saat ini"
-            )
+        factory_request(
+            "Buat laporan ringkas mengenai status operasional perusahaan saat ini"
         )
     )
 
     assert result.resolution.understanding.recommended_type is CapabilityType.REPORT
     assert result.resolution.decision == "CREATE"
     assert result.existing_capability_refs == ()
-    assert result.agent_proposal is None
+    assert result.agent_draft is None
     assert result.capability_draft is not None
-    assert result.capability_specification is not None
     assert result.capability_draft["output_state"] == "DRAFT"
-    assert result.capability_specification.lifecycle_state == "DRAFT"
-    assert result.capability_specification.capability_type is CapabilityType.REPORT
-    assert result.capability_specification.scope_refs == ("scope.workspace",)
-    assert result.capability_specification.risk_level == "MEDIUM"
-    assert result.capability_specification.evidence_requirements
-    assert result.capability_specification.test_requirements
+    assert result.capability_draft["lifecycle_state"] == "DRAFT"
+    assert result.capability_draft["capability_type"] == "REPORT"
+    assert result.capability_draft["scope_refs"] == ["scope.workspace"]
+    assert result.capability_draft["risk_level"] == "MEDIUM"
+    assert result.capability_draft["evidence_requirements"]
+    assert result.capability_draft["test_requirements"]
     assert result.handoff.requested_operations == ("REGISTER_CAPABILITY_DRAFT",)
     assert result.handoff.authoritative_state_changed is False
 
@@ -59,6 +83,7 @@ def test_agent_factory_produces_canonical_draft_and_real_negative_expectation() 
     catalog = (
         CapabilityCatalogItem(
             capability_id="document.read",
+            version="1.0.0",
             name="Read approved document",
             purpose="Read one versioned source through Backend",
             capability_type=CapabilityType.TOOL_REQUIREMENT,
@@ -68,38 +93,29 @@ def test_agent_factory_produces_canonical_draft_and_real_negative_expectation() 
         ),
     )
     result = factory().analyze(
-        FactoryAnalysisRequest(
-            requirement=requirement(
-                "Rancang agent untuk menganalisis dokumen dan menyajikan bukti terikat sumber"
-            ),
-            capability_catalog=catalog,
+        factory_request(
+            "Rancang agent untuk menganalisis dokumen dan menyajikan bukti terikat sumber",
+            catalog,
         )
     )
 
-    assert result.agent_proposal is not None
-    proposal = result.agent_proposal
-    assert proposal.status == "DRAFT"
-    assert proposal.specification.version == "0.1.0"
-    assert proposal.specification.scope_refs == ("scope.workspace",)
-    assert proposal.specification.permission_refs == ("document.read",)
-    assert "Approve or release its own proposal." in proposal.specification.prohibited_actions
+    assert result.agent_draft is not None
+    proposal = result.agent_draft
+    assert proposal.lifecycle_state == "DRAFT"
+    assert proposal.version == "0.1.0"
+    assert proposal.scope_refs == ("scope.workspace",)
+    assert proposal.permission_refs == ("document.read",)
+    assert "Approve or release its own proposal." in proposal.prohibited_actions
     assert proposal.agent_definition["output_state"] == "DRAFT"
     assert "No direct database access." in proposal.agent_definition["restrictions"]
-    assert proposal.prompt_version == "1.0.0"
-    negative = next(
-        case for case in proposal.test_plan.cases if case.taxonomy is EvaluationTaxonomy.NEGATIVE
-    )
-    assert negative.expected_status == "DENIED"
-    assert negative.expected_error_code == "AUTHORIZATION_DENIED"
+    assert any("Negative test" in item for item in proposal.test_requirements)
     assert result.handoff.target_service == "alos-backend"
 
 
 def test_missing_capabilities_are_explicit_dependencies() -> None:
     result = factory().analyze(
-        FactoryAnalysisRequest(
-            requirement=requirement(
-                "Rancang agent untuk mencari dokumen dan membandingkan konflik kontrak"
-            )
+        factory_request(
+            "Rancang agent untuk mencari dokumen dan membandingkan konflik kontrak"
         )
     )
 
@@ -114,6 +130,7 @@ def test_resolver_reuses_complete_authoritative_catalog_match() -> None:
         (
             CapabilityCatalogItem(
                 capability_id="report.generate",
+                version="1.0.0",
                 name="Generate report",
                 purpose="Create a reviewable report draft",
                 capability_type=CapabilityType.REPORT,
@@ -133,6 +150,7 @@ def test_resolver_reuses_complete_authoritative_catalog_match() -> None:
 def test_factory_reuse_returns_backend_reference_without_draft_or_registry_create() -> None:
     catalog_item = CapabilityCatalogItem(
         capability_id="report.generate",
+        version="1.0.0",
         name="Generate report",
         purpose="Create a reviewable report draft",
         capability_type=CapabilityType.REPORT,
@@ -140,19 +158,16 @@ def test_factory_reuse_returns_backend_reference_without_draft_or_registry_creat
     )
 
     result = factory().analyze(
-        FactoryAnalysisRequest(
-            requirement=requirement(
-                "Buat laporan ringkas status operasional perusahaan untuk direview"
-            ),
-            capability_catalog=(catalog_item,),
+        factory_request(
+            "Buat laporan ringkas status operasional perusahaan untuk direview",
+            (catalog_item,),
         )
     )
 
     assert result.resolution.decision == "REUSE"
     assert result.existing_capability_refs == (catalog_item,)
     assert result.capability_draft is None
-    assert result.capability_specification is None
-    assert result.agent_proposal is None
+    assert result.agent_draft is None
     assert result.handoff.requested_operations == ()
     assert result.handoff.authoritative_state_changed is False
 

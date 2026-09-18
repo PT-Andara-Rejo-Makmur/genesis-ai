@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
@@ -12,11 +11,12 @@ from jsonschema import Draft202012Validator, FormatChecker
 from referencing import Registry, Resource
 
 
-@dataclass(frozen=True, slots=True)
 class ContractValidationError(ValueError):
-    schema_id: str
-    path: str
-    reason: str
+    def __init__(self, schema_id: str, path: str, reason: str) -> None:
+        super().__init__(f"{schema_id} at {path}: {reason}")
+        self.schema_id = schema_id
+        self.path = path
+        self.reason = reason
 
     def __str__(self) -> str:
         return f"{self.schema_id} at {self.path}: {self.reason}"
