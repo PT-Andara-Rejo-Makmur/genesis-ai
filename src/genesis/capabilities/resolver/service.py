@@ -76,14 +76,32 @@ class CapabilityResolver:
             dict.fromkeys(tool_id for item in resolved for tool_id in item.backing_tool_ids)
         )
         permissions = tuple(
-            dict.fromkeys(permission for item in resolved for permission in item.permission_refs)
+            dict.fromkeys(
+                (
+                    *requirement.permission_refs,
+                    *(permission for item in resolved for permission in item.permission_refs),
+                )
+            )
+        )
+        decision = "CREATE" if missing or unavailable else "REUSE"
+        reason = self._decision_reason(decision, resolved, missing, unavailable)
+        evidence_requirements = self._evidence_requirements(requirement.statement)
+        test_requirements = self._test_requirements(
+            understanding.risk_level,
+            bool(tools),
         )
         return CapabilityResolution(
             understanding=understanding,
+            decision=decision,
+            reason=reason,
+            purpose=requirement.statement.strip(),
+            scope_refs=requirement.scope_refs,
             resolved=resolved,
             missing_capability_ids=missing,
             required_tool_ids=tools,
             required_permission_refs=permissions,
+            evidence_requirements=evidence_requirements,
+            test_requirements=test_requirements,
             activation_readiness=(
                 "NEEDS_CONFIGURATION" if missing or unavailable else "READY_FOR_DRAFT"
             ),
@@ -130,6 +148,10 @@ class CapabilityResolver:
     def _classify_type(statement: str, candidate_count: int) -> CapabilityType:
         if any(word in statement for word in ("agent", "assistant", "koordinator")):
             return CapabilityType.AGENT
+        if any(word in statement for word in ("human task", "tugas manusia", "manual review")):
+            return CapabilityType.HUMAN_TASK
+        if any(word in statement for word in ("rule", "aturan", "policy", "kebijakan")):
+            return CapabilityType.RULE
         if any(word in statement for word in ("workflow", "alur", "proses")):
             return CapabilityType.WORKFLOW
         if any(word in statement for word in ("validate", "validasi", "checker")):
@@ -153,3 +175,46 @@ class CapabilityResolver:
     @staticmethod
     def _tokens(value: str) -> tuple[str, ...]:
         return tuple(token for token in re.findall(r"[a-z0-9_]+", value) if len(token) > 2)
+
+    @staticmethod
+    def _decision_reason(
+        decision: str,
+        resolved: Sequence[CapabilityCatalogItem],
+        missing: tuple[str, ...],
+        unavailable: bool,
+    ) -> str:
+        if decision == "REUSE":
+            identifiers = ", ".join(item.capability_id for item in resolved)
+            return f"Authoritative Backend catalog satisfies the requirement: {identifiers}."
+        if unavailable:
+            return "A matching Backend catalog capability is unavailable or not configured."
+        return "Backend catalog does not contain all required capabilities: " + ", ".join(missing)
+
+    @staticmethod
+    def _evidence_requirements(statement: str) -> tuple[str, ...]:
+        requirements = [
+            "Cite every material conclusion to an immutable source or ToolResult.",
+            "Preserve source_id, version, and retrieval timestamp in evidence lineage.",
+            "Mark unsupported business truth as requiring human review.",
+        ]
+        if any(word in statement.casefold() for word in ("document", "dokumen", "contract")):
+            requirements.append("Bind document conclusions to source version and SHA-256.")
+        return tuple(requirements)
+
+    @staticmethod
+    def _test_requirements(risk_level: RiskLevel, uses_tools: bool) -> tuple[str, ...]:
+        requirements = [
+            "Positive test: valid authorized input produces schema-valid output.",
+            "Negative test: invalid or unauthorized context fails closed.",
+            "Contract test: output validates against alos-contracts.",
+        ]
+        if uses_tools or risk_level in {"MEDIUM", "HIGH", "CRITICAL"}:
+            requirements.extend(
+                (
+                    "Security test: scope and permission escalation is denied.",
+                    "Recovery test: Backend or tool failure remains bounded and structured.",
+                )
+            )
+        if risk_level in {"HIGH", "CRITICAL"}:
+            requirements.append("Regression test: approved baseline behavior remains stable.")
+        return tuple(requirements)

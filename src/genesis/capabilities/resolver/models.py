@@ -8,6 +8,7 @@ from genesis.capabilities.models.definition import CapabilityType
 
 RiskLevel = Literal["LOW", "MEDIUM", "HIGH", "CRITICAL"]
 DataClassification = Literal["PUBLIC", "INTERNAL", "CONFIDENTIAL", "RESTRICTED"]
+ResolutionDecision = Literal["REUSE", "CREATE"]
 
 
 class Requirement(BaseModel):
@@ -57,8 +58,14 @@ class RequirementUnderstanding(BaseModel):
 class CapabilityResolution(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     understanding: RequirementUnderstanding
+    decision: ResolutionDecision
+    reason: str = Field(min_length=1)
+    purpose: str = Field(min_length=1)
+    scope_refs: tuple[str, ...] = Field(min_length=1)
     resolved: tuple[CapabilityCatalogItem, ...]
     missing_capability_ids: tuple[str, ...]
     required_tool_ids: tuple[str, ...]
     required_permission_refs: tuple[str, ...]
+    evidence_requirements: tuple[str, ...] = Field(min_length=1)
+    test_requirements: tuple[str, ...] = Field(min_length=1)
     activation_readiness: Literal["READY_FOR_DRAFT", "NEEDS_CONFIGURATION"]

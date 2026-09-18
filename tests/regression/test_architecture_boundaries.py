@@ -83,3 +83,36 @@ def test_genesis_has_no_authoritative_tool_executor() -> None:
             if isinstance(node, ast.ClassDef) and node.name == "ToolExecutor"
         )
     assert definitions == []
+
+
+def test_factory_exposes_no_approval_release_or_registry_mutation_service() -> None:
+    forbidden_names = {
+        "approve",
+        "release",
+        "activate",
+        "register",
+        "grant_permission",
+        "change_scope",
+    }
+    violations: list[str] = []
+    for path in (SOURCE / "control_plane" / "factory").rglob("*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                and node.name in forbidden_names
+            ):
+                violations.append(f"{path.relative_to(ROOT)}:{node.name}")
+    assert violations == []
+
+
+def test_rd_domains_do_not_define_duplicate_research_engines() -> None:
+    engine_classes: list[str] = []
+    for path in (SOURCE / "research" / "domains").rglob("*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        engine_classes.extend(
+            f"{path.relative_to(ROOT)}:{node.name}"
+            for node in ast.walk(tree)
+            if isinstance(node, ast.ClassDef) and node.name.endswith("Engine")
+        )
+    assert engine_classes == []

@@ -3,12 +3,33 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from genesis.capabilities import CapabilityDefinition
+from genesis.capabilities.models.definition import CapabilityType
 from genesis.capabilities.resolver import (
     CapabilityCatalogItem,
     CapabilityResolution,
     Requirement,
 )
 from genesis.evals import EvaluationPlan
+
+RiskLevel = Literal["LOW", "MEDIUM", "HIGH", "CRITICAL"]
+
+
+class DraftSpecification(BaseModel):
+    """Non-authoritative proposal details missing from the current canonical draft schema."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    identifier: str = Field(min_length=3)
+    version: str = Field(pattern=r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$")
+    lifecycle_state: Literal["DRAFT"] = "DRAFT"
+    purpose: str = Field(min_length=1)
+    capability_type: CapabilityType
+    scope_refs: tuple[str, ...] = Field(min_length=1)
+    tool_ids: tuple[str, ...] = ()
+    permission_refs: tuple[str, ...] = ()
+    prohibited_actions: tuple[str, ...] = Field(min_length=1)
+    risk_level: RiskLevel
+    evidence_requirements: tuple[str, ...] = Field(min_length=1)
+    test_requirements: tuple[str, ...] = Field(min_length=1)
 
 
 class CapabilityFactoryProposal(BaseModel):
@@ -36,6 +57,7 @@ class StructuredAgentProposal(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     draft_id: str
     status: Literal["DRAFT"] = "DRAFT"
+    specification: DraftSpecification
     agent_definition: dict[str, Any]
     prompt_id: str
     prompt_version: str
@@ -61,6 +83,7 @@ class FactoryAnalysisResult(BaseModel):
     correlation_id: str
     resolution: CapabilityResolution
     capability_draft: dict[str, Any]
+    capability_specification: DraftSpecification
     agent_proposal: StructuredAgentProposal | None = None
     evidence_requirements: tuple[str, ...]
     missing_dependencies: tuple[str, ...]

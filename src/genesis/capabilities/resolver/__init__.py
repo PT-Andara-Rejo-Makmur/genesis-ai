@@ -5,6 +5,7 @@ from genesis.capabilities.resolver.models import (
     CapabilityResolution,
     Requirement,
     RequirementUnderstanding,
+    ResolutionDecision,
 )
 from genesis.capabilities.resolver.service import CapabilityResolver
 
@@ -14,4 +15,5 @@ __all__ = [
     "CapabilityResolver",
     "Requirement",
     "RequirementUnderstanding",
+    "ResolutionDecision",
 ]
