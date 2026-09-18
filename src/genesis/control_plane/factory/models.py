@@ -82,8 +82,9 @@ class FactoryAnalysisResult(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     correlation_id: str
     resolution: CapabilityResolution
-    capability_draft: dict[str, Any]
-    capability_specification: DraftSpecification
+    existing_capability_refs: tuple[CapabilityCatalogItem, ...] = ()
+    capability_draft: dict[str, Any] | None = None
+    capability_specification: DraftSpecification | None = None
     agent_proposal: StructuredAgentProposal | None = None
     evidence_requirements: tuple[str, ...]
     missing_dependencies: tuple[str, ...]

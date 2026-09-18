@@ -39,7 +39,11 @@ def test_capability_first_does_not_force_report_into_agent() -> None:
     )
 
     assert result.resolution.understanding.recommended_type is CapabilityType.REPORT
+    assert result.resolution.decision == "CREATE"
+    assert result.existing_capability_refs == ()
     assert result.agent_proposal is None
+    assert result.capability_draft is not None
+    assert result.capability_specification is not None
     assert result.capability_draft["output_state"] == "DRAFT"
     assert result.capability_specification.lifecycle_state == "DRAFT"
     assert result.capability_specification.capability_type is CapabilityType.REPORT
@@ -120,9 +124,37 @@ def test_resolver_reuses_complete_authoritative_catalog_match() -> None:
 
     assert result.decision == "REUSE"
     assert result.missing_capability_ids == ()
-    assert result.required_permission_refs == ("document.read", "report.read")
+    assert result.required_permission_refs == ("report.read",)
     assert result.scope_refs == ("scope.workspace",)
+    assert result.activation_readiness == "READY_FOR_REUSE"
     assert "report.generate" in result.reason
+
+
+def test_factory_reuse_returns_backend_reference_without_draft_or_registry_create() -> None:
+    catalog_item = CapabilityCatalogItem(
+        capability_id="report.generate",
+        name="Generate report",
+        purpose="Create a reviewable report draft",
+        capability_type=CapabilityType.REPORT,
+        permission_refs=("report.read",),
+    )
+
+    result = factory().analyze(
+        FactoryAnalysisRequest(
+            requirement=requirement(
+                "Buat laporan ringkas status operasional perusahaan untuk direview"
+            ),
+            capability_catalog=(catalog_item,),
+        )
+    )
+
+    assert result.resolution.decision == "REUSE"
+    assert result.existing_capability_refs == (catalog_item,)
+    assert result.capability_draft is None
+    assert result.capability_specification is None
+    assert result.agent_proposal is None
+    assert result.handoff.requested_operations == ()
+    assert result.handoff.authoritative_state_changed is False
 
 
 @pytest.mark.parametrize(

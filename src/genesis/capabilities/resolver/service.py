@@ -58,12 +58,15 @@ class CapabilityResolver:
                 score += 100
             if score:
                 ranked.append((score, item))
-        resolved = tuple(
+        ranked_matches = tuple(
             item
             for _, item in sorted(
                 ranked,
                 key=lambda pair: (-pair[0], pair[1].capability_id),
             )
+        )
+        resolved = tuple(
+            item for item in ranked_matches if item.capability_id in requested
         )
         found_ids = {item.capability_id for item in resolved}
         missing = tuple(sorted(requested.difference(found_ids)))
@@ -76,12 +79,7 @@ class CapabilityResolver:
             dict.fromkeys(tool_id for item in resolved for tool_id in item.backing_tool_ids)
         )
         permissions = tuple(
-            dict.fromkeys(
-                (
-                    *requirement.permission_refs,
-                    *(permission for item in resolved for permission in item.permission_refs),
-                )
-            )
+            dict.fromkeys(permission for item in resolved for permission in item.permission_refs)
         )
         decision = "CREATE" if missing or unavailable else "REUSE"
         reason = self._decision_reason(decision, resolved, missing, unavailable)
@@ -103,7 +101,7 @@ class CapabilityResolver:
             evidence_requirements=evidence_requirements,
             test_requirements=test_requirements,
             activation_readiness=(
-                "NEEDS_CONFIGURATION" if missing or unavailable else "READY_FOR_DRAFT"
+                "NEEDS_CONFIGURATION" if missing or unavailable else "READY_FOR_REUSE"
             ),
         )
 

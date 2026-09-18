@@ -68,4 +68,6 @@ class CapabilityResolution(BaseModel):
     required_permission_refs: tuple[str, ...]
     evidence_requirements: tuple[str, ...] = Field(min_length=1)
     test_requirements: tuple[str, ...] = Field(min_length=1)
-    activation_readiness: Literal["READY_FOR_DRAFT", "NEEDS_CONFIGURATION"]
+    activation_readiness: Literal[
+        "READY_FOR_REUSE", "READY_FOR_DRAFT", "NEEDS_CONFIGURATION"
+    ]

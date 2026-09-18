@@ -59,6 +59,20 @@ class CapabilityFactory:
     def analyze(self, request: FactoryAnalysisRequest) -> FactoryAnalysisResult:
         requirement = request.requirement
         resolution = self._resolver.resolve(requirement, request.capability_catalog)
+        if resolution.decision == "REUSE":
+            requested = set(resolution.understanding.candidate_capability_ids)
+            references = tuple(
+                item for item in resolution.resolved if item.capability_id in requested
+            )
+            return FactoryAnalysisResult(
+                correlation_id=requirement.correlation_id,
+                resolution=resolution,
+                existing_capability_refs=references,
+                evidence_requirements=resolution.evidence_requirements,
+                missing_dependencies=(),
+                handoff=RegistryHandoff(requested_operations=()),
+            )
+
         digest = hashlib.sha256(requirement.statement.encode("utf-8")).hexdigest()[:16]
         capability_id = f"capability_{digest}"
         capability_draft = self._contracts.validate(
@@ -117,6 +131,7 @@ class CapabilityFactory:
         return FactoryAnalysisResult(
             correlation_id=requirement.correlation_id,
             resolution=resolution,
+            existing_capability_refs=(),
             capability_draft=capability_draft,
             capability_specification=capability_specification,
             agent_proposal=agent_proposal,
