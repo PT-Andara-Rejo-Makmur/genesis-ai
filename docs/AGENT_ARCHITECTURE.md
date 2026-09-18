@@ -12,6 +12,10 @@ AgentDefinition merupakan konfigurasi data berversi berisi purpose, capability, 
 
 AgentDraft adalah proposal Definition yang dibuat manusia atau GENESIS. Draft hanya dapat berstatus `DRAFT` atau `SUBMITTED_FOR_REVIEW`; GENESIS tidak dapat mengaktifkannya sendiri.
 
+Factory menerima requirement dan snapshot katalog read-only dari Backend. Resolver lebih dulu
+memilih tipe capability. AgentDraft hanya dibuat bila kebutuhan benar-benar memerlukan Agent
+atau Composite; Report, Validator, Workflow, atau Skill tidak otomatis dibungkus Agent.
+
 ## Runtime
 
 AgentRuntime adalah Protocol framework-neutral. PydanticAI berada pada adapter dan menerima invoker yang menggunakan ModelGateway. Runtime tidak menerima provider credential atau koneksi business database.
@@ -26,3 +30,7 @@ AgentBlueprint -> AgentDefinition/AgentDraft -> AgentRuntime -> AgentRunResult
                                                v
                                          ModelGateway
 ```
+
+Setelah draft dibuat, GENESIS mengembalikan typed handoff ke Backend. Agent Registry,
+Capability Registry, Skill Registry, governance decision, dan release transition tidak pernah
+dijalankan oleh factory GENESIS.

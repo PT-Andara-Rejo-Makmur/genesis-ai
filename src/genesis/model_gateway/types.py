@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -11,6 +11,9 @@ class ModelRequest(BaseModel):
     correlation_id: str = Field(min_length=3)
     policy_ref: str = Field(min_length=1)
     purpose: str = Field(min_length=1)
+    data_classification: Literal["PUBLIC", "INTERNAL", "CONFIDENTIAL", "RESTRICTED"] = "INTERNAL"
+    prompt_id: str | None = Field(default=None, min_length=1)
+    prompt_version: str | None = Field(default=None, min_length=1)
     messages: tuple[dict[str, Any], ...] = Field(min_length=1)
     requested_max_tokens: int = Field(ge=1)
     budget: ExecutionBudget

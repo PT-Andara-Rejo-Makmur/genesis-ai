@@ -21,3 +21,15 @@ class SystemInfoResponse(BaseModel):
     version: str
     role: Literal["AI_CONTROL_PLANE"] = "AI_CONTROL_PLANE"
     authoritative_business_state: Literal[False] = False
+
+
+class IntegrationDiagnosticResponse(BaseModel):
+    """Transport projection of the canonical GENESIS diagnostic contract."""
+
+    model_config = ConfigDict(extra="forbid")
+    service: Literal["genesis-ai"] = "genesis-ai"
+    status: Literal["reachable"] = "reachable"
+    role: Literal["AI_CONTROL_PLANE"] = "AI_CONTROL_PLANE"
+    authoritative_business_state: Literal[False] = False
+    provider_required: Literal[False] = False
+    correlation_id: str

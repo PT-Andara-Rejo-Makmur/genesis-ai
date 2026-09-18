@@ -1,6 +1,7 @@
 """Typed GENESIS service configuration."""
 
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 
 from pydantic import Field, SecretStr
@@ -20,6 +21,7 @@ class Settings(BaseSettings):
     APP_PORT: int = Field(default=8100, ge=1, le=65535)
     ALOS_BACKEND_BASE_URL: str = "http://localhost:8000"
     ALOS_INTERNAL_TOKEN: SecretStr = SecretStr("")
+    ALOS_CONTRACTS_PATH: Path | None = None
     OTEL_SERVICE_NAME: str = "genesis-ai"
     DEFAULT_MODEL_ROUTE: str = "disabled"
     MAX_DELEGATION_DEPTH: int = Field(default=3, ge=0, le=20)

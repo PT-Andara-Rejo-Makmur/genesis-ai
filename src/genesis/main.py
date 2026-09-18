@@ -4,7 +4,10 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 
+from genesis.api.auth import InternalAuthError
+from genesis.api.errors import InternalBoundaryError
 from genesis.api.models import HealthResponse, ReadinessResponse
 from genesis.api.routes import router as internal_router
 from genesis.config import Settings, get_settings
@@ -29,6 +32,36 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.settings = resolved
     app.state.started = False
     app.add_middleware(CorrelationMiddleware)
+
+    @app.exception_handler(InternalAuthError)
+    async def handle_internal_auth_error(_request: Request, exc: InternalAuthError) -> JSONResponse:
+        from genesis.observability.correlation import current_correlation_id
+
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={
+                "code": exc.code,
+                "message": exc.message,
+                "correlation_id": current_correlation_id(),
+                "retryable": False,
+            },
+        )
+
+    @app.exception_handler(InternalBoundaryError)
+    async def handle_internal_boundary_error(
+        _request: Request, exc: InternalBoundaryError
+    ) -> JSONResponse:
+        from genesis.observability.correlation import current_correlation_id
+
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={
+                "code": exc.code,
+                "message": exc.message,
+                "correlation_id": current_correlation_id(),
+                "retryable": exc.status_code >= 500,
+            },
+        )
 
     @app.get("/health", response_model=HealthResponse, tags=["system"])
     async def health() -> HealthResponse:

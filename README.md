@@ -79,6 +79,7 @@ cp .env.example .env
 - `APP_ENV`, `APP_HOST`, `APP_PORT`: konfigurasi service.
 - `ALOS_BACKEND_BASE_URL`: endpoint authoritative Backend.
 - `ALOS_INTERNAL_TOKEN`: secret service-to-service; tidak boleh disimpan ke Git.
+- `ALOS_CONTRACTS_PATH`: lokasi checkout `alos-contracts` untuk validasi canonical draft.
 - `OTEL_SERVICE_NAME`: nama telemetry service.
 - `DEFAULT_MODEL_ROUTE`: route ModelGateway; default `disabled` aman tanpa provider.
 - `MAX_DELEGATION_DEPTH`, `MAX_DELEGATION_CHILDREN`: hard limit orchestration.
@@ -92,10 +93,17 @@ uvicorn genesis.main:app --reload --host 127.0.0.1 --port 8100
 Endpoint foundation:
 
 - `GET /health`
+- `GET /internal/v1/system/integration` untuk diagnostic internal tanpa provider atau database bisnis
 - `GET /ready`
 - `GET /internal/v1/system/info`
+- `POST /internal/v1/factory/analyze` untuk requirement understanding dan canonical draft;
+  endpoint ini tidak mendaftarkan, menyetujui, atau merilis capability/Agent.
 - `GET /docs`
 - `GET /openapi.json`
+
+GENESIS mengirim canonical `ToolRequest` ke `POST /internal/v1/tool-requests` milik Backend melalui
+`BackendToolClient`; tidak ada adapter business tool pada GENESIS. Lihat
+[Boundary Eksekusi Tool](docs/TOOL_EXECUTION_BOUNDARY.md).
 
 ## Pengujian dan quality gate
 
@@ -121,6 +129,11 @@ Container berjalan sebagai non-root. Provider configuration, telemetry exporter,
 
 Agent tidak direpresentasikan sebagai satu Python class per logical Agent. Ratusan Agent menggunakan generic runtime melalui alur `Blueprint -> Definition/Draft -> Runtime -> Run`. Dynamic Agent menghasilkan data `AgentDraft`, bukan file `.py` atau self-activation.
 
+Capability Factory menjalankan alur `Requirement -> CapabilityResolver -> CapabilityDraft ->
+optional AgentDraft -> Backend Registry/Governance`. Katalog capability pada request adalah
+snapshot read-only dari Backend. Output canonical divalidasi terhadap `alos-contracts` tanpa
+Python import lintas repository.
+
 ## Sistem Skill
 
 Skill menggunakan ALOS Skill Specification pada `skill.yaml` dan prosedur pada `SKILL.md`. Discovery hanya membaca metadata; instruksi penuh dimuat ketika relevan. Self-created Skill selalu menjadi `SkillDraft` yang memerlukan review dan activation dari ALOS authority.
@@ -135,6 +148,11 @@ Agent hanya mengakses model melalui alur `Agent -> ModelGateway -> policy -> bud
 
 Aksi bisnis mengikuti `Agent -> ToolRequest -> ALOS Backend -> ToolExecutor -> ToolResult`. MCP tidak boleh menjadi jalur pintas untuk melewati Backend.
 
+Runtime generic berada pada `AgentRuntimeEngine`: ia mengonsumsi context dan authorization
+snapshot dari Backend, menjalankan planning melalui protocol, menerapkan execution budget,
+dan menghasilkan canonical AgentRunResult. Run authority dan persistence tidak berada di
+GENESIS. Lihat [Split Runtime MVP-1](docs/MVP1_RUNTIME_SPLIT.md).
+
 ## Development workflow
 
 1. Modelkan capability sebelum memutuskan bahwa implementasinya harus berupa Agent.
@@ -143,4 +161,4 @@ Aksi bisnis mengikuti `Agent -> ToolRequest -> ALOS Backend -> ToolExecutor -> T
 4. Tambahkan test taxonomy berbasis risiko.
 5. Jalankan seluruh quality gate dan dokumentasikan perubahan authority/budget/delegation.
 
-Dokumentasi: [Arsitektur](ARCHITECTURE.md), [Struktur Folder](docs/FOLDER_STRUCTURE.md), [Arsitektur Agent](docs/AGENT_ARCHITECTURE.md), [Sistem Skill](docs/SKILL_SYSTEM.md), [Orchestration](docs/ORCHESTRATION.md), dan [Sistem Review](docs/REVIEW_SYSTEM.md).
+Dokumentasi: [Arsitektur](ARCHITECTURE.md), [Struktur Folder](docs/FOLDER_STRUCTURE.md), [Arsitektur Agent](docs/AGENT_ARCHITECTURE.md), [Migrasi Intelligence MVP-1](docs/MVP1_INTELLIGENCE_MIGRATION.md), [Migrasi Knowledge dan Research MVP-1](docs/MVP1_KNOWLEDGE_RESEARCH_MIGRATION.md), [Sistem Skill](docs/SKILL_SYSTEM.md), [Orchestration](docs/ORCHESTRATION.md), dan [Sistem Review](docs/REVIEW_SYSTEM.md).

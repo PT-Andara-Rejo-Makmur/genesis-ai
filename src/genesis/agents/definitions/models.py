@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -28,6 +28,8 @@ class AgentDefinition(BaseModel):
     permission_refs: tuple[str, ...] = ()
     scope_refs: tuple[str, ...] = Field(min_length=1)
     model_policy_ref: str = Field(min_length=1)
+    input_schema: dict[str, Any] = Field(default_factory=lambda: {"type": "object"})
+    output_schema: dict[str, Any] = Field(default_factory=lambda: {"type": "object"})
 
 
 class AgentDraft(BaseModel):

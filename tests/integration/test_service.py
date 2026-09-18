@@ -21,11 +21,138 @@ async def test_health_and_readiness(client: httpx.AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
+async def test_internal_health_requires_service_token(client: httpx.AsyncClient) -> None:
+    correlation_id = "corr_internal_health_001"
+    response = await client.get(
+        "/internal/v1/health",
+        headers={
+            "Authorization": "Bearer test-only-token",
+            "X-Correlation-ID": correlation_id,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+    assert response.headers["X-Correlation-ID"] == correlation_id
+
+
+@pytest.mark.asyncio
 async def test_internal_system_info_declares_non_authority(client: httpx.AsyncClient) -> None:
-    response = await client.get("/internal/v1/system/info")
+    response = await client.get(
+        "/internal/v1/system/info",
+        headers={"Authorization": "Bearer test-only-token"},
+    )
     assert response.status_code == 200
     assert response.json()["role"] == "AI_CONTROL_PLANE"
     assert response.json()["authoritative_business_state"] is False
+
+
+@pytest.mark.asyncio
+async def test_integration_diagnostic_propagates_correlation(client: httpx.AsyncClient) -> None:
+    correlation_id = "corr_genesis_diagnostic_001"
+    response = await client.get(
+        "/internal/v1/system/integration",
+        headers={
+            "Authorization": "Bearer test-only-token",
+            "X-Correlation-ID": correlation_id,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["X-Correlation-ID"] == correlation_id
+    assert response.json() == {
+        "service": "genesis-ai",
+        "status": "reachable",
+        "role": "AI_CONTROL_PLANE",
+        "authoritative_business_state": False,
+        "provider_required": False,
+        "correlation_id": correlation_id,
+    }
+
+
+@pytest.mark.asyncio
+async def test_internal_endpoint_rejects_missing_service_token(
+    client: httpx.AsyncClient,
+) -> None:
+    response = await client.get(
+        "/internal/v1/system/integration",
+        headers={"X-Correlation-ID": "corr_auth_denied_001"},
+    )
+
+    assert response.status_code == 401
+    assert response.json() == {
+        "code": "INTERNAL_AUTH_DENIED",
+        "message": "GENESIS internal service authentication failed.",
+        "correlation_id": "corr_auth_denied_001",
+        "retryable": False,
+    }
+
+
+@pytest.mark.asyncio
+async def test_factory_endpoint_returns_draft_without_authoritative_write(
+    client: httpx.AsyncClient,
+) -> None:
+    correlation_id = "corr_factory_api_001"
+    response = await client.post(
+        "/internal/v1/factory/analyze",
+        headers={
+            "Authorization": "Bearer test-only-token",
+            "X-Correlation-ID": correlation_id,
+        },
+        json={
+            "requirement": {
+                "tenant_id": "tenant_api",
+                "organization_id": "organization_api",
+                "workspace_id": "workspace_api",
+                "actor_id": "actor_api",
+                "correlation_id": correlation_id,
+                "statement": "Rancang agent untuk menganalisis dokumen internal secara aman",
+                "scope_refs": ["scope.workspace"],
+                "permission_refs": ["document.read"],
+                "data_classification": "INTERNAL",
+            },
+            "capability_catalog": [],
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["correlation_id"] == correlation_id
+    assert payload["agent_proposal"]["status"] == "DRAFT"
+    assert payload["handoff"]["authoritative_state_changed"] is False
+    assert payload["handoff"]["target_service"] == "alos-backend"
+
+
+@pytest.mark.asyncio
+async def test_factory_endpoint_rejects_correlation_mismatch(
+    client: httpx.AsyncClient,
+) -> None:
+    response = await client.post(
+        "/internal/v1/factory/analyze",
+        headers={
+            "Authorization": "Bearer test-only-token",
+            "X-Correlation-ID": "corr_header_001",
+        },
+        json={
+            "requirement": {
+                "tenant_id": "tenant_api",
+                "organization_id": "organization_api",
+                "workspace_id": "workspace_api",
+                "actor_id": "actor_api",
+                "correlation_id": "corr_payload_001",
+                "statement": "Rancang capability untuk menganalisis dokumen secara aman",
+                "scope_refs": ["scope.workspace"],
+            }
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json() == {
+        "code": "CORRELATION_ID_MISMATCH",
+        "message": "Payload correlation_id must match X-Correlation-ID.",
+        "correlation_id": "corr_header_001",
+        "retryable": False,
+    }
 
 
 @pytest.mark.asyncio

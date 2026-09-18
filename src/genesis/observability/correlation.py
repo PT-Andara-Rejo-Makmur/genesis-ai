@@ -32,3 +32,9 @@ class CorrelationMiddleware:
             await self.app(scope, receive, send_with_header)
         finally:
             correlation_context.reset(token)
+
+
+def current_correlation_id() -> str:
+    """Return the correlation identifier bound to the current request."""
+
+    return correlation_context.get() or f"corr_{uuid4().hex}"

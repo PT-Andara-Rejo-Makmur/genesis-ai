@@ -5,6 +5,11 @@ ROOT = Path(__file__).resolve().parents[2]
 SOURCE = ROOT / "src" / "genesis"
 FORBIDDEN_DOMAIN_IMPORTS = ("genesis.adapters", "pydantic_ai", "langgraph", "mcp")
 DIRECT_PROVIDER_IMPORTS = ("openai", "anthropic", "google.generativeai", "google.genai")
+FORBIDDEN_BACKEND_IMPLEMENTATION_IMPORTS = (
+    "alos",
+    "psycopg",
+    "sqlalchemy",
+)
 
 
 def imported_modules(path: Path) -> set[str]:
@@ -48,3 +53,33 @@ def test_only_one_master_coordinator_exists() -> None:
             if isinstance(node, ast.ClassDef) and node.name.endswith("Coordinator")
         )
     assert coordinator_classes == ["MasterCoordinator"]
+
+
+def test_genesis_tool_boundary_has_no_backend_adapter_or_database_import() -> None:
+    violations: list[str] = []
+    for path in (SOURCE / "runtime" / "execution").rglob("*.py"):
+        for module in imported_modules(path):
+            if module.startswith(FORBIDDEN_BACKEND_IMPLEMENTATION_IMPORTS):
+                violations.append(f"{path.relative_to(ROOT)} imports {module}")
+    assert violations == []
+
+
+def test_genesis_intelligence_has_no_backend_implementation_or_database_import() -> None:
+    violations: list[str] = []
+    for path in SOURCE.rglob("*.py"):
+        for module in imported_modules(path):
+            if module.startswith(FORBIDDEN_BACKEND_IMPLEMENTATION_IMPORTS):
+                violations.append(f"{path.relative_to(ROOT)} imports {module}")
+    assert violations == []
+
+
+def test_genesis_has_no_authoritative_tool_executor() -> None:
+    definitions: list[str] = []
+    for path in SOURCE.rglob("*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        definitions.extend(
+            f"{path.relative_to(ROOT)}:{node.name}"
+            for node in ast.walk(tree)
+            if isinstance(node, ast.ClassDef) and node.name == "ToolExecutor"
+        )
+    assert definitions == []
