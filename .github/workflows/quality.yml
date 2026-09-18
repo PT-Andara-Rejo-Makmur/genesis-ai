@@ -11,15 +11,29 @@ permissions:
 jobs:
   quality:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: genesis-ai
     steps:
-      - name: Checkout repository
+      - name: Checkout GENESIS repository
         uses: actions/checkout@v4
+        with:
+          path: genesis-ai
+
+      - name: Checkout canonical contracts
+        uses: actions/checkout@v4
+        with:
+          repository: PT-Andara-Rejo-Makmur/alos-contracts
+          ref: main
+          path: alos-contracts
+          token: ${{ secrets.CROSS_REPO_READ_TOKEN || github.token }}
 
       - name: Siapkan Python 3.12
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: pip
+          cache-dependency-path: genesis-ai/pyproject.toml
 
       - name: Pasang dependency dan framework adapter
         run: python -m pip install -e ".[dev,frameworks]"
