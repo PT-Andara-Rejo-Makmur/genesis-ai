@@ -67,7 +67,7 @@ class ContextManager:
         except (ContractValidationError, ValidationError, ValueError) as exc:
             raise ContextFailure(
                 "EXECUTION_CONTEXT_INVALID",
-                "ExecutionContext does not satisfy the canonical contract and H2 requirements.",
+                "ExecutionContext does not satisfy the canonical contract requirements.",
                 correlation_id,
                 details={"reason": str(exc)},
             ) from exc
@@ -87,10 +87,15 @@ class ContextManager:
         self._require_subset(
             "tool",
             tools,
-            authorization.allowed_tool_ids,
+            context.allowed_tool_ids,
             correlation_id,
         )
-        self._safety.validate_segments(segments, context, authorization)
+        self._safety.validate_segments(
+            segments,
+            context,
+            authorization,
+            active_scope_refs=scope.all_refs,
+        )
 
         required_segments = self._required_segments(context, normalized_goal)
         selection = self._budget.select(
@@ -120,6 +125,11 @@ class ContextManager:
         canonical = self._canonical_bundle(
             context_id=context_id,
             context=context,
+            goal=normalized_goal,
+            scope_refs=scope.all_refs,
+            capability_id=capability_id,
+            tool_ids=tools,
+            memory_refs=selected_memory,
             timestamp=timestamp,
             selected=selection.selected,
         )
@@ -206,6 +216,11 @@ class ContextManager:
         *,
         context_id: str,
         context: ExecutionContextView,
+        goal: str,
+        scope_refs: tuple[str, ...],
+        capability_id: str,
+        tool_ids: tuple[str, ...],
+        memory_refs: tuple[str, ...],
         timestamp: datetime,
         selected: Sequence[ContextSegment],
     ) -> dict[str, Any]:
@@ -217,7 +232,12 @@ class ContextManager:
             "workspace_id": context.workspace_id,
             "actor_id": context.actor_id,
             "correlation_id": context.correlation_id,
-            "scope_refs": list(context.scope_refs),
+            "goal": goal,
+            "capability_id": capability_id,
+            "allowed_tool_ids": list(tool_ids),
+            "execution_budget": context.execution_budget.model_dump(exclude_none=True),
+            "memory_refs": list(memory_refs),
+            "scope_refs": list(scope_refs),
             "created_at": timestamp.astimezone(UTC).isoformat().replace("+00:00", "Z"),
             "items": [
                 {
@@ -229,6 +249,11 @@ class ContextManager:
                     "content_hash": item.evidence.content_hash,
                     "anchor": item.evidence.anchor,
                     "data_classification": item.evidence.data_classification,
+                    "source_type": item.evidence.source_type,
+                    "freshness": item.evidence.freshness,
+                    "reliability": item.evidence.reliability,
+                    "content_trust": item.evidence.content_trust,
+                    "instruction_authority": item.evidence.instruction_authority,
                 }
                 for item in evidenced
                 if item.evidence is not None

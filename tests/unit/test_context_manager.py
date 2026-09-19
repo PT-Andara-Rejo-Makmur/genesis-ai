@@ -36,6 +36,7 @@ def execution_context(**changes: Any) -> dict[str, Any]:
             "authority_level": "REQUESTER",
         },
         "permission_refs": ["sources.read", "research.external.read"],
+        "allowed_tool_ids": ["source.search_context", "research.external.retrieve"],
         "scope_refs": ["scope.division.technology", "scope.project.genesis"],
         "data_classification": "INTERNAL",
         "correlation_id": "corr_context_001",
@@ -71,15 +72,24 @@ def evidence(**changes: Any) -> EvidenceReference:
         "tenant_id": "tenant_context_001",
         "organization_id": "organization_context_001",
         "workspace_id": "workspace_context_001",
+        "run_id": "run_context_001",
+        "correlation_id": "corr_context_001",
+        "scope_refs": ["scope.division.technology"],
         "evidence_id": "evidence_context_001",
         "source_id": "source_context_001",
         "uri": "urn:alos:source:context:1",
         "captured_at": datetime(2026, 9, 19, tzinfo=UTC),
+        "retrieved_at": datetime(2026, 9, 19, tzinfo=UTC),
         "content_hash": "sha256:" + "a" * 64,
         "source_version": "1.0.0",
         "anchor": "lines 1-2",
         "excerpt": "Approved internal evidence.",
         "data_classification": "INTERNAL",
+        "source_type": "INTERNAL",
+        "freshness": "CURRENT",
+        "reliability": "HIGH",
+        "content_trust": "GOVERNED",
+        "instruction_authority": False,
         "validation_status": "VALID",
     }
     value.update(changes)
@@ -141,6 +151,14 @@ def test_valid_context_is_typed_canonical_and_deterministic() -> None:
     assert first.execution_budget.max_tokens == 2000
     assert first.evidence_refs[0].evidence_id == "evidence_context_001"
     assert first.canonical_context_bundle["correlation_id"] == "corr_context_001"
+    assert first.canonical_context_bundle["goal"] == first.goal
+    assert first.canonical_context_bundle["capability_id"] == first.capability_id
+    assert first.canonical_context_bundle["allowed_tool_ids"] == ["source.search_context"]
+    assert first.canonical_context_bundle["memory_refs"] == []
+    canonical_evidence = first.canonical_context_bundle["evidence_refs"][0]
+    assert canonical_evidence["run_id"] == "run_context_001"
+    assert canonical_evidence["source_type"] == "INTERNAL"
+    assert canonical_evidence["instruction_authority"] is False
 
 
 def test_context_budget_keeps_authority_goal_and_evidence_and_drops_low_priority() -> None:
@@ -220,8 +238,12 @@ def test_invalid_execution_context_fails_closed(
 
 
 def test_stale_authoritative_evidence_fails_closed() -> None:
+    stale = segment(
+        freshness=Freshness.STALE,
+        evidence=evidence(freshness="STALE"),
+    )
     with pytest.raises(ContextFailure) as raised:
-        build(segments=(segment(freshness=Freshness.STALE),))
+        build(segments=(stale,))
 
     assert raised.value.code == "CONTEXT_EVIDENCE_STALE"
 
@@ -261,3 +283,24 @@ def test_context_cannot_expand_permission_or_tool_authority() -> None:
     with pytest.raises(ContextFailure) as raised_scope:
         build(segments=(scope_escalation,))
     assert raised_scope.value.code == "CONTEXT_SCOPE_ESCALATION"
+
+
+def test_context_uses_execution_snapshot_tool_allowlist() -> None:
+    context = execution_context(allowed_tool_ids=[])
+    with pytest.raises(ContextFailure) as raised:
+        build(execution_context=context)
+
+    assert raised.value.code == "CONTEXT_TOOL_ESCALATION"
+
+
+def test_context_rejects_segment_outside_active_task_scope() -> None:
+    inactive_scope = segment(
+        scope_refs=("scope.project.genesis",),
+        evidence=evidence(scope_refs=("scope.project.genesis",)),
+    )
+    active_scope = ContextScope(division_refs=("scope.division.technology",))
+
+    with pytest.raises(ContextFailure) as raised:
+        build(scope=active_scope, segments=(inactive_scope,))
+
+    assert raised.value.code == "CONTEXT_SCOPE_ESCALATION"

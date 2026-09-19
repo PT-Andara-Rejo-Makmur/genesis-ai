@@ -3,14 +3,17 @@
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from genesis.contracts import CanonicalContractCatalog, ContractValidationError
 from genesis.research.domains import ResearchDomainProfile, domain_profile
 from genesis.research.models import ResearchDomain
 from genesis.research.sources import FreshnessStatus, SourceReliability
 from genesis.runtime.context import DataClassification
+
+RESEARCH_DECISION_SCHEMA = "https://schemas.alos.dev/v1/research/research-decision.schema.json"
 
 
 class ResearchChannel(StrEnum):
@@ -91,6 +94,12 @@ class ResearchDecision(BaseModel):
     allowed_tool_ids: tuple[str, ...]
     retrieval: BackendRetrievalProposal | None = None
     external_content_trust: Literal["UNTRUSTED"] = "UNTRUSTED"
+    canonical_research_decision: dict[str, Any] = Field(exclude=True)
+
+    def as_canonical(self) -> dict[str, Any]:
+        """Return only the contract-valid cross-service projection."""
+
+        return dict(self.canonical_research_decision)
 
 
 class ResearchDecisionFailure(Exception):
@@ -111,6 +120,9 @@ class ResearchDecisionFailure(Exception):
 
 class ExternalResearchDecider:
     """Prefer authorized internal evidence, then memory, then Backend retrieval."""
+
+    def __init__(self, *, contracts: CanonicalContractCatalog) -> None:
+        self._contracts = contracts
 
     def decide(self, request: ResearchDecisionRequest) -> ResearchDecision:
         self._validate_evidence_scope(request)
@@ -219,8 +231,8 @@ class ExternalResearchDecider:
             return "External retrieval exceeds the authorized cost budget."
         return None
 
-    @staticmethod
     def _result(
+        self,
         request: ResearchDecisionRequest,
         profile: ResearchDomainProfile,
         decision: ResearchDecisionKind,
@@ -229,6 +241,25 @@ class ExternalResearchDecider:
         *,
         retrieval: BackendRetrievalProposal | None = None,
     ) -> ResearchDecision:
+        canonical = {
+            "correlation_id": request.correlation_id,
+            "decision": decision.value,
+            "domain": request.domain.value,
+            "selected_evidence_ids": list(evidence_ids),
+            "reasons": list(reasons),
+            "retrieval": (
+                retrieval.model_dump(mode="json") if retrieval is not None else None
+            ),
+            "external_content_trust": "UNTRUSTED",
+        }
+        try:
+            validated = self._contracts.validate(RESEARCH_DECISION_SCHEMA, canonical)
+        except (ContractValidationError, ValueError) as exc:
+            raise ResearchDecisionFailure(
+                "RESEARCH_DECISION_CONTRACT_INVALID",
+                "Research decision does not satisfy the canonical contract.",
+                request.correlation_id,
+            ) from exc
         return ResearchDecision(
             correlation_id=request.correlation_id,
             decision=decision,
@@ -239,4 +270,5 @@ class ExternalResearchDecider:
             authorized_permission_refs=request.authorized_permission_refs,
             allowed_tool_ids=request.allowed_tool_ids,
             retrieval=retrieval,
+            canonical_research_decision=validated,
         )

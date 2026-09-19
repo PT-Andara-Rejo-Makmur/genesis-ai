@@ -72,6 +72,12 @@ class ContextSafetyGuard:
             boundary.allowed_permission_refs,
             correlation_id,
         )
+        self._require_subset(
+            "tool",
+            context.allowed_tool_ids,
+            boundary.allowed_tool_ids,
+            correlation_id,
+        )
         roles = tuple(
             dict.fromkeys(
                 (context.authority_context.role, *context.authority_context.role_refs)
@@ -96,10 +102,12 @@ class ContextSafetyGuard:
         segments: Sequence[ContextSegment],
         context: ExecutionContextView,
         boundary: BackendContextAuthorization,
+        *,
+        active_scope_refs: Sequence[str],
     ) -> None:
         for item in segments:
             self._require_subset(
-                "scope", item.scope_refs, context.scope_refs, context.correlation_id
+                "scope", item.scope_refs, active_scope_refs, context.correlation_id
             )
             self._require_subset(
                 "permission",
@@ -133,10 +141,44 @@ class ContextSafetyGuard:
                         context.correlation_id,
                         details={"segment_id": item.segment_id},
                     )
+                self._require_subset(
+                    "evidence_scope",
+                    evidence.scope_refs,
+                    item.scope_refs,
+                    context.correlation_id,
+                )
+                if evidence.correlation_id != context.correlation_id:
+                    raise ContextFailure(
+                        "CONTEXT_EVIDENCE_CORRELATION_MISMATCH",
+                        "Evidence correlation does not match ExecutionContext.",
+                        context.correlation_id,
+                        details={"segment_id": item.segment_id},
+                    )
                 if evidence.data_classification is not item.data_classification:
                     raise ContextFailure(
                         "CONTEXT_EVIDENCE_CLASSIFICATION_MISMATCH",
                         "Evidence and context segment classification do not match.",
+                        context.correlation_id,
+                        details={"segment_id": item.segment_id},
+                    )
+                if evidence.source_type != item.source.value:
+                    raise ContextFailure(
+                        "CONTEXT_EVIDENCE_SOURCE_MISMATCH",
+                        "Evidence source semantics do not match the context segment.",
+                        context.correlation_id,
+                        details={"segment_id": item.segment_id},
+                    )
+                if evidence.content_trust != item.trust.value:
+                    raise ContextFailure(
+                        "CONTEXT_EVIDENCE_TRUST_MISMATCH",
+                        "Evidence trust semantics do not match the context segment.",
+                        context.correlation_id,
+                        details={"segment_id": item.segment_id},
+                    )
+                if evidence.freshness != item.freshness.value:
+                    raise ContextFailure(
+                        "CONTEXT_EVIDENCE_FRESHNESS_MISMATCH",
+                        "Evidence freshness does not match the context segment.",
                         context.correlation_id,
                         details={"segment_id": item.segment_id},
                     )

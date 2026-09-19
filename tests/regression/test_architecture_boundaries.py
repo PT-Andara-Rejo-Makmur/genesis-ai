@@ -118,7 +118,7 @@ def test_rd_domains_do_not_define_duplicate_research_engines() -> None:
     assert engine_classes == []
 
 
-def test_h2_context_and_research_decision_have_no_direct_io_or_backend_implementation() -> None:
+def test_context_and_research_decision_have_no_direct_io_or_backend_implementation() -> None:
     roots = (
         SOURCE / "runtime" / "context",
         SOURCE / "research" / "decision.py",

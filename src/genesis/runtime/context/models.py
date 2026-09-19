@@ -66,6 +66,7 @@ class ExecutionContextView(BaseModel):
     actor_id: str = Field(min_length=3, max_length=128)
     authority_context: AuthorityContext
     permission_refs: tuple[str, ...] = ()
+    allowed_tool_ids: tuple[str, ...] = ()
     scope_refs: tuple[str, ...] = Field(min_length=1)
     data_classification: DataClassification
     correlation_id: str = Field(min_length=3, max_length=128)
@@ -113,17 +114,32 @@ class EvidenceReference(BaseModel):
     tenant_id: str = Field(min_length=3, max_length=128)
     organization_id: str = Field(min_length=3, max_length=128)
     workspace_id: str = Field(min_length=3, max_length=128)
+    run_id: str = Field(min_length=3, max_length=128)
+    correlation_id: str = Field(min_length=3, max_length=128)
+    scope_refs: tuple[str, ...] = Field(min_length=1)
     evidence_id: str = Field(min_length=3, max_length=128)
     source_id: str = Field(min_length=3, max_length=128)
     uri: str = Field(min_length=1)
     captured_at: datetime
+    retrieved_at: datetime
     content_hash: str = Field(pattern=r"^sha256:[a-f0-9]{64}$")
     source_version: str = Field(min_length=1)
     anchor: str = Field(min_length=1)
     excerpt: str = ""
     data_classification: DataClassification
+    source_type: Literal["INTERNAL", "EXTERNAL"]
+    freshness: Literal["CURRENT", "STALE", "UNKNOWN"]
+    reliability: Literal["UNVERIFIED", "LOW", "MEDIUM", "HIGH"]
+    content_trust: Literal["GOVERNED", "UNTRUSTED"]
+    instruction_authority: Literal[False] = False
     validation_status: Literal["PENDING", "VALID", "INVALID", "WAIVED"]
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def enforce_external_source_semantics(self) -> EvidenceReference:
+        if self.source_type == "EXTERNAL" and self.content_trust != "UNTRUSTED":
+            raise ValueError("EXTERNAL evidence must be UNTRUSTED")
+        return self
 
 
 class ContextSegment(BaseModel):
@@ -180,7 +196,7 @@ class ContextSelection(BaseModel):
 
 
 class RuntimeContextBundle(BaseModel):
-    """H2 runtime wrapper around a canonical ContextBundle projection."""
+    """Runtime wrapper around a canonical ContextBundle projection."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
     context_id: str = Field(min_length=3, max_length=128)

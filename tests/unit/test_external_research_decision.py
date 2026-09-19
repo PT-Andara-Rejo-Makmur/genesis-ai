@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
+from genesis.contracts import CanonicalContractCatalog
 from genesis.research import (
     EvidenceCandidate,
     ExternalResearchBoundary,
@@ -15,6 +18,12 @@ from genesis.research import (
 )
 from genesis.research.sources import FreshnessStatus, SourceReliability
 from genesis.runtime.context import DataClassification
+
+CONTRACTS_ROOT = Path(__file__).resolve().parents[3] / "alos-contracts"
+
+
+def decider() -> ExternalResearchDecider:
+    return ExternalResearchDecider(contracts=CanonicalContractCatalog(CONTRACTS_ROOT))
 
 
 def evidence(**changes: object) -> EvidenceCandidate:
@@ -55,7 +64,7 @@ def request(**changes: object) -> ResearchDecisionRequest:
 
 
 def test_valid_internal_only_request_uses_internal_source() -> None:
-    result = ExternalResearchDecider().decide(
+    result = decider().decide(
         request(external=ExternalResearchBoundary(enabled=False))
     )
 
@@ -66,7 +75,7 @@ def test_valid_internal_only_request_uses_internal_source() -> None:
 
 
 def test_external_research_is_required_only_through_backend_boundary() -> None:
-    result = ExternalResearchDecider().decide(request(evidence=[]))
+    result = decider().decide(request(evidence=[]))
 
     assert result.decision is ResearchDecisionKind.REQUEST_EXTERNAL_RESEARCH
     assert result.retrieval is not None
@@ -74,6 +83,23 @@ def test_external_research_is_required_only_through_backend_boundary() -> None:
     assert result.retrieval.tool_id == "research.external.retrieve"
     assert result.retrieval.permission_expansion is False
     assert result.external_content_trust == "UNTRUSTED"
+    assert result.as_canonical() == {
+        "correlation_id": "corr_research_decision_001",
+        "decision": "REQUEST_EXTERNAL_RESEARCH",
+        "domain": "TECHNOLOGY",
+        "selected_evidence_ids": [],
+        "reasons": list(result.reasons),
+        "retrieval": {
+            "boundary": "BACKEND_TOOL_EXECUTOR",
+            "tool_id": "research.external.retrieve",
+            "instruction_authority": False,
+            "permission_expansion": False,
+            "scope_expansion": False,
+        },
+        "external_content_trust": "UNTRUSTED",
+    }
+    assert "authorized_permission_refs" not in result.as_canonical()
+    assert "canonical_research_decision" not in result.model_dump(mode="json")
 
 
 def test_external_research_is_not_required_when_memory_is_sufficient() -> None:
@@ -81,7 +107,7 @@ def test_external_research_is_not_required_when_memory_is_sufficient() -> None:
         evidence_id="memory_evidence_001",
         channel=ResearchChannel.MEMORY,
     )
-    result = ExternalResearchDecider().decide(request(evidence=[memory]))
+    result = decider().decide(request(evidence=[memory]))
 
     assert result.decision is ResearchDecisionKind.USE_MEMORY
     assert result.retrieval is None
@@ -89,7 +115,7 @@ def test_external_research_is_not_required_when_memory_is_sufficient() -> None:
 
 def test_stale_evidence_and_disabled_external_return_insufficient_evidence() -> None:
     stale = evidence(freshness=FreshnessStatus.STALE)
-    result = ExternalResearchDecider().decide(
+    result = decider().decide(
         request(evidence=[stale], external=ExternalResearchBoundary(enabled=False))
     )
 
@@ -99,20 +125,20 @@ def test_stale_evidence_and_disabled_external_return_insufficient_evidence() -> 
 
 
 def test_missing_task_information_returns_needs_information() -> None:
-    result = ExternalResearchDecider().decide(request(information_complete=False))
+    result = decider().decide(request(information_complete=False))
     assert result.decision is ResearchDecisionKind.NEEDS_INFORMATION
 
 
 def test_external_research_cannot_expand_tool_permission_or_cost_authority() -> None:
-    no_tool = ExternalResearchDecider().decide(request(evidence=[], allowed_tool_ids=[]))
+    no_tool = decider().decide(request(evidence=[], allowed_tool_ids=[]))
     assert no_tool.decision is ResearchDecisionKind.INSUFFICIENT_EVIDENCE
 
-    no_permission = ExternalResearchDecider().decide(
+    no_permission = decider().decide(
         request(evidence=[], authorized_permission_refs=[])
     )
     assert no_permission.decision is ResearchDecisionKind.INSUFFICIENT_EVIDENCE
 
-    over_cost = ExternalResearchDecider().decide(
+    over_cost = decider().decide(
         request(evidence=[], maximum_external_cost=0.5)
     )
     assert over_cost.decision is ResearchDecisionKind.INSUFFICIENT_EVIDENCE
@@ -121,7 +147,7 @@ def test_external_research_cannot_expand_tool_permission_or_cost_authority() -> 
 def test_cross_scope_evidence_fails_closed_and_preserves_correlation() -> None:
     cross_scope = evidence(scope_refs=["scope.project.other"])
     with pytest.raises(ResearchDecisionFailure) as raised:
-        ExternalResearchDecider().decide(request(evidence=[cross_scope]))
+        decider().decide(request(evidence=[cross_scope]))
 
     assert raised.value.code == "RESEARCH_EVIDENCE_SCOPE_DENIED"
     assert raised.value.correlation_id == "corr_research_decision_001"
@@ -129,7 +155,7 @@ def test_cross_scope_evidence_fails_closed_and_preserves_correlation() -> None:
 
 def test_four_domains_are_profiles_not_authorization_mechanisms() -> None:
     decisions = [
-        ExternalResearchDecider().decide(request(domain=domain)) for domain in ResearchDomain
+        decider().decide(request(domain=domain)) for domain in ResearchDomain
     ]
 
     assert {result.domain_profile.domain for result in decisions} == set(ResearchDomain)
