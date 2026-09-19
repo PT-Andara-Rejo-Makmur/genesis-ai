@@ -116,3 +116,19 @@ def test_rd_domains_do_not_define_duplicate_research_engines() -> None:
             if isinstance(node, ast.ClassDef) and node.name.endswith("Engine")
         )
     assert engine_classes == []
+
+
+def test_h2_context_and_research_decision_have_no_direct_io_or_backend_implementation() -> None:
+    roots = (
+        SOURCE / "runtime" / "context",
+        SOURCE / "research" / "decision.py",
+    )
+    forbidden = (*FORBIDDEN_BACKEND_IMPLEMENTATION_IMPORTS, "httpx", "requests", "urllib")
+    violations: list[str] = []
+    for root in roots:
+        paths = (root,) if root.is_file() else tuple(root.rglob("*.py"))
+        for path in paths:
+            for module in imported_modules(path):
+                if module.startswith(forbidden):
+                    violations.append(f"{path.relative_to(ROOT)} imports {module}")
+    assert violations == []
