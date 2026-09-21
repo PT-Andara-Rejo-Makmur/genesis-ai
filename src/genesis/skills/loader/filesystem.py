@@ -10,6 +10,7 @@ from pydantic import ValidationError
 from genesis.contracts import CanonicalContractCatalog, ContractValidationError
 from genesis.skills.loader.models import (
     LoadedSkill,
+    SkillDataFile,
     SkillDefinition,
     SkillDescriptor,
     SkillFailureCode,
@@ -17,6 +18,7 @@ from genesis.skills.loader.models import (
 )
 
 SKILL_DEFINITION_SCHEMA = "https://schemas.alos.dev/v1/skill/skill-definition.schema.json"
+ALLOWED_DATA_SUFFIXES = frozenset({".md", ".yaml", ".yml", ".json"})
 
 
 class FileSystemSkillLoader:
@@ -42,6 +44,7 @@ class FileSystemSkillLoader:
                     SKILL_DEFINITION_SCHEMA,
                     cast(Mapping[str, Any], document),
                 )
+                canonical.pop("tool_ids", None)
                 specification = SkillDefinition.model_validate(canonical)
             except (
                 OSError,
@@ -85,8 +88,25 @@ class FileSystemSkillLoader:
                 "Selected skill package has an empty SKILL.md.",
                 skill_id=descriptor.specification.skill_id,
             )
+        data_files = []
+        for path in sorted(descriptor.package_path.rglob("*")):
+            if not path.is_file() or path.name in {"skill.yaml", "SKILL.md"}:
+                continue
+            if path.suffix.lower() not in ALLOWED_DATA_SUFFIXES:
+                raise SkillPackageError(
+                    SkillFailureCode.INVALID_MANIFEST,
+                    "Skill package contains a forbidden executable or binary file.",
+                    skill_id=descriptor.specification.skill_id,
+                )
+            data_files.append(
+                SkillDataFile(
+                    relative_path=path.relative_to(descriptor.package_path).as_posix(),
+                    content=path.read_text(encoding="utf-8"),
+                )
+            )
         return LoadedSkill(
             specification=descriptor.specification,
             instructions=instructions,
             package_path=descriptor.package_path,
+            data_files=tuple(data_files),
         )

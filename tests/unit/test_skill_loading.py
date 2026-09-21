@@ -73,3 +73,27 @@ def test_missing_skill_markdown_fails_explicitly(tmp_path: Path) -> None:
         loader().load(descriptor)
 
     assert raised.value.code is SkillFailureCode.MISSING_INSTRUCTIONS
+
+
+def test_deprecated_tool_ids_are_accepted_but_ignored(tmp_path: Path) -> None:
+    package = tmp_path / "legacy"
+    package.mkdir()
+    (package / "skill.yaml").write_text(
+        manifest(extra="tool_ids: [tool.must.not.grant]"), encoding="utf-8"
+    )
+    (package / "SKILL.md").write_text("# Safe instructions", encoding="utf-8")
+    specification = loader().discover(tmp_path)[0].specification
+    assert specification.required_tool_ids == ("source.search_context",)
+    assert not hasattr(specification, "tool_ids")
+
+
+def test_skill_package_rejects_executable_files(tmp_path: Path) -> None:
+    package = tmp_path / "unsafe"
+    package.mkdir()
+    (package / "skill.yaml").write_text(manifest(), encoding="utf-8")
+    (package / "SKILL.md").write_text("# Safe instructions", encoding="utf-8")
+    (package / "payload.py").write_text("raise RuntimeError()", encoding="utf-8")
+    descriptor = loader().discover(tmp_path)[0]
+    with pytest.raises(SkillPackageError) as raised:
+        loader().load(descriptor)
+    assert raised.value.code is SkillFailureCode.INVALID_MANIFEST

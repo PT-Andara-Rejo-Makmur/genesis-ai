@@ -6,7 +6,8 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict
 
-from genesis.skills.loader import FileSystemSkillLoader, LoadedSkill, SkillReference
+from genesis.skills.authorization import SkillAuthorizationSnapshot
+from genesis.skills.loader import FileSystemSkillLoader, LoadedSkill
 from genesis.skills.progressive_loading import ProgressiveSkillLoader
 from genesis.skills.selection import SkillSelection, SkillSelector
 
@@ -43,9 +44,8 @@ class SkillRuntime:
         self,
         packages_root: Path,
         *,
-        authorized_refs: Sequence[SkillReference],
+        authorization: SkillAuthorizationSnapshot,
         goal: str,
-        backend_allowed_tool_ids: Sequence[str],
         agent_allowed_tool_ids: Sequence[str] | None = None,
         capability_context: Sequence[str] = (),
         maximum_selected: int = 1,
@@ -53,9 +53,11 @@ class SkillRuntime:
         descriptors = self._loader.discover(packages_root)
         selection = self._selector.select(
             descriptors,
-            authorized_refs=authorized_refs,
+            authorized_refs=authorization.authorized_skill_refs,
             goal=goal,
-            backend_allowed_tool_ids=backend_allowed_tool_ids,
+            backend_allowed_tool_ids=authorization.allowed_tool_ids,
+            backend_permission_refs=authorization.permission_refs,
+            backend_scope_refs=authorization.scope_refs,
             agent_allowed_tool_ids=agent_allowed_tool_ids,
             capability_context=capability_context,
             maximum_selected=maximum_selected,

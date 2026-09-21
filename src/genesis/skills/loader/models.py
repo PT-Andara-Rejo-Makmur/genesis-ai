@@ -8,13 +8,11 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class SkillDefinition(BaseModel):
-    """Immutable typed projection of canonical ALOS SkillDefinition 1.4.0."""
+    """Immutable typed projection of canonical ALOS SkillDefinition."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
     skill_id: str = Field(min_length=3, max_length=128)
-    skill_version: str = Field(
-        pattern=r"^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$"
-    )
+    skill_version: str = Field(pattern=r"^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$")
     name: str = Field(min_length=1)
     description: str = Field(min_length=1)
     purpose: str = ""
@@ -23,6 +21,8 @@ class SkillDefinition(BaseModel):
     output_schema_ref: str
     procedure: tuple[str, ...] = ()
     required_tool_ids: tuple[str, ...] = ()
+    permission_refs: tuple[str, ...] = ()
+    scope_refs: tuple[str, ...] = ()
     evidence_requirements: tuple[str, ...] = ()
     restrictions: tuple[str, ...] = ()
     failure_modes: tuple[str, ...] = ()
@@ -35,9 +35,7 @@ class SkillReference(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
     skill_id: str = Field(min_length=3, max_length=128)
-    skill_version: str = Field(
-        pattern=r"^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$"
-    )
+    skill_version: str = Field(pattern=r"^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$")
 
 
 class SkillDescriptor(BaseModel):
@@ -55,11 +53,18 @@ class SkillDescriptor(BaseModel):
         )
 
 
+class SkillDataFile(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    relative_path: str
+    content: str
+
+
 class LoadedSkill(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, arbitrary_types_allowed=True)
     specification: SkillDefinition
     instructions: str = Field(min_length=1)
     package_path: Path
+    data_files: tuple[SkillDataFile, ...] = ()
 
 
 class SkillDraft(BaseModel):

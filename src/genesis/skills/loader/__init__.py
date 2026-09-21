@@ -1,6 +1,7 @@
 from genesis.skills.loader.filesystem import FileSystemSkillLoader
 from genesis.skills.loader.models import (
     LoadedSkill,
+    SkillDataFile,
     SkillDefinition,
     SkillDescriptor,
     SkillDraft,
@@ -12,6 +13,7 @@ from genesis.skills.loader.models import (
 __all__ = [
     "FileSystemSkillLoader",
     "LoadedSkill",
+    "SkillDataFile",
     "SkillDefinition",
     "SkillDescriptor",
     "SkillDraft",

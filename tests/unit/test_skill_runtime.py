@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 
 from genesis.contracts import CanonicalContractCatalog
+from genesis.skills.authorization import SkillAuthorizationSnapshot
 from genesis.skills.loader import (
     FileSystemSkillLoader,
     SkillFailureCode,
@@ -61,6 +62,24 @@ def reference(skill_id: str, version: str = "1.0.0") -> SkillReference:
     return SkillReference(skill_id=skill_id, skill_version=version)
 
 
+def authorization(
+    refs: tuple[SkillReference, ...],
+    tools: tuple[str, ...] = (),
+    permissions: tuple[str, ...] = (),
+    scopes: tuple[str, ...] = (),
+) -> SkillAuthorizationSnapshot:
+    return SkillAuthorizationSnapshot(
+        tenant_id="tenant_test",
+        organization_id="organization_test",
+        workspace_id="workspace_test",
+        correlation_id="corr_skill_test",
+        authorized_skill_refs=refs,
+        permission_refs=permissions,
+        scope_refs=scopes,
+        allowed_tool_ids=tools,
+    )
+
+
 def test_unauthorized_package_cannot_be_selected(tmp_path: Path) -> None:
     write_package(tmp_path, "technology", skill_id="skill.research.technology")
     result = SkillSelector().select(
@@ -82,9 +101,7 @@ def test_version_mismatch_has_no_silent_fallback(tmp_path: Path) -> None:
         backend_allowed_tool_ids=(),
     )
     assert result.selected == ()
-    assert any(
-        item.status is SkillSelectionStatus.VERSION_MISMATCH for item in result.unavailable
-    )
+    assert any(item.status is SkillSelectionStatus.VERSION_MISMATCH for item in result.unavailable)
 
 
 def test_selection_is_deterministic_explainable_and_bounded(tmp_path: Path) -> None:
@@ -144,12 +161,13 @@ def test_runtime_loads_only_selected_instructions(tmp_path: Path) -> None:
     )
     result = SkillRuntime(loader=loader()).prepare(
         tmp_path,
-        authorized_refs=(
-            reference("skill.research.technology"),
-            reference("skill.research.management"),
+        authorization=authorization(
+            (
+                reference("skill.research.technology"),
+                reference("skill.research.management"),
+            )
         ),
         goal="technology architecture",
-        backend_allowed_tool_ids=(),
     )
     assert result.status is SkillRuntimeStatus.READY
     assert len(result.loaded_skills) == 1
@@ -160,22 +178,50 @@ def test_runtime_loads_only_selected_instructions(tmp_path: Path) -> None:
 def test_progressive_loader_rejects_nonselected_and_over_bound_outcomes(tmp_path: Path) -> None:
     write_package(tmp_path, "technology", skill_id="skill.research.technology")
     descriptor = loader().discover(tmp_path)[0]
-    unauthorized = SkillSelector().select(
-        (descriptor,),
-        authorized_refs=(),
-        goal="technology architecture",
-        backend_allowed_tool_ids=(),
-    ).unavailable
+    unauthorized = (
+        SkillSelector()
+        .select(
+            (descriptor,),
+            authorized_refs=(),
+            goal="technology architecture",
+            backend_allowed_tool_ids=(),
+        )
+        .unavailable
+    )
     with pytest.raises(SkillPackageError) as rejected:
         ProgressiveSkillLoader(loader()).load_selected(unauthorized)
     assert rejected.value.code is SkillFailureCode.UNAUTHORIZED
 
-    selected = SkillSelector().select(
-        (descriptor,),
-        authorized_refs=(reference("skill.research.technology"),),
-        goal="technology architecture",
-        backend_allowed_tool_ids=(),
-    ).selected
+    selected = (
+        SkillSelector()
+        .select(
+            (descriptor,),
+            authorized_refs=(reference("skill.research.technology"),),
+            goal="technology architecture",
+            backend_allowed_tool_ids=(),
+        )
+        .selected
+    )
     with pytest.raises(SkillPackageError) as bounded:
         ProgressiveSkillLoader(loader(), maximum_loaded=1).load_selected((*selected, *selected))
     assert bounded.value.code is SkillFailureCode.LOAD_LIMIT_EXCEEDED
+
+
+def test_permission_and_scope_prerequisites_fail_closed(tmp_path: Path) -> None:
+    write_package(tmp_path, "technology", skill_id="skill.research.technology")
+    manifest_path = tmp_path / "technology" / "skill.yaml"
+    manifest_path.write_text(
+        manifest_path.read_text(encoding="utf-8")
+        + "\npermission_refs: [research.read]\nscope_refs: [scope.research]",
+        encoding="utf-8",
+    )
+    result = SkillSelector().select(
+        loader().discover(tmp_path),
+        authorized_refs=(reference("skill.research.technology"),),
+        goal="technology architecture",
+        backend_allowed_tool_ids=(),
+        backend_permission_refs=(),
+        backend_scope_refs=("scope.research",),
+    )
+    assert result.selected == ()
+    assert result.unavailable[0].status is SkillSelectionStatus.REQUIRED_PERMISSION_UNAVAILABLE

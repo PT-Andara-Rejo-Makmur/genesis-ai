@@ -18,6 +18,8 @@ class SkillSelectionStatus(StrEnum):
     MISSING_PACKAGE = "MISSING_PACKAGE"
     NOT_RELEVANT = "NOT_RELEVANT"
     REQUIRED_TOOL_UNAVAILABLE = "REQUIRED_TOOL_UNAVAILABLE"
+    REQUIRED_PERMISSION_UNAVAILABLE = "REQUIRED_PERMISSION_UNAVAILABLE"
+    REQUIRED_SCOPE_UNAVAILABLE = "REQUIRED_SCOPE_UNAVAILABLE"
 
 
 class SkillCandidateOutcome(BaseModel):
@@ -47,6 +49,8 @@ class SkillSelector:
         authorized_refs: Sequence[SkillReference],
         goal: str,
         backend_allowed_tool_ids: Sequence[str],
+        backend_permission_refs: Sequence[str] = (),
+        backend_scope_refs: Sequence[str] = (),
         agent_allowed_tool_ids: Sequence[str] | None = None,
         capability_context: Sequence[str] = (),
         maximum_selected: int = 1,
@@ -103,6 +107,34 @@ class SkillSelector:
                             "A required tool is absent from the effective Backend/Agent allowlist."
                         ),
                         missing_tool_ids=missing,
+                        descriptor=descriptor,
+                    )
+                )
+                continue
+            missing_permissions = tuple(
+                sorted(set(descriptor.specification.permission_refs) - set(backend_permission_refs))
+            )
+            if missing_permissions:
+                unavailable.append(
+                    SkillCandidateOutcome(
+                        reference=reference,
+                        status=SkillSelectionStatus.REQUIRED_PERMISSION_UNAVAILABLE,
+                        relevance_score=score,
+                        reason="A permission prerequisite is absent from Backend authority.",
+                        descriptor=descriptor,
+                    )
+                )
+                continue
+            missing_scopes = tuple(
+                sorted(set(descriptor.specification.scope_refs) - set(backend_scope_refs))
+            )
+            if missing_scopes:
+                unavailable.append(
+                    SkillCandidateOutcome(
+                        reference=reference,
+                        status=SkillSelectionStatus.REQUIRED_SCOPE_UNAVAILABLE,
+                        relevance_score=score,
+                        reason="A scope prerequisite is absent from Backend authority.",
                         descriptor=descriptor,
                     )
                 )
