@@ -132,3 +132,44 @@ def test_context_and_research_decision_have_no_direct_io_or_backend_implementati
                 if module.startswith(forbidden):
                     violations.append(f"{path.relative_to(ROOT)} imports {module}")
     assert violations == []
+
+
+def test_skill_system_has_no_direct_io_framework_or_execution_bypass() -> None:
+    forbidden = (
+        *FORBIDDEN_BACKEND_IMPLEMENTATION_IMPORTS,
+        *DIRECT_PROVIDER_IMPORTS,
+        *FORBIDDEN_DOMAIN_IMPORTS,
+        "httpx",
+        "requests",
+        "urllib",
+        "genesis.runtime.execution.tool_client",
+    )
+    violations: list[str] = []
+    for path in (SOURCE / "skills").rglob("*.py"):
+        for module in imported_modules(path):
+            if module.startswith(forbidden):
+                violations.append(f"{path.relative_to(ROOT)} imports {module}")
+    assert violations == []
+
+
+def test_skill_system_has_no_dynamic_package_execution_or_local_tool_executor() -> None:
+    violations: list[str] = []
+    for path in (SOURCE / "skills").rglob("*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ClassDef) and node.name == "ToolExecutor":
+                violations.append(f"{path.relative_to(ROOT)} defines ToolExecutor")
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+                if node.func.id in {"eval", "exec", "__import__"}:
+                    violations.append(f"{path.relative_to(ROOT)} calls {node.func.id}")
+    assert violations == []
+
+
+def test_builtin_skill_packages_are_data_only() -> None:
+    packages = ROOT / "blueprints" / "skills"
+    executable_files = [
+        path.relative_to(ROOT)
+        for path in packages.rglob("*")
+        if path.is_file() and path.suffix not in {".md", ".yaml"}
+    ]
+    assert executable_files == []
