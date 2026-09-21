@@ -109,6 +109,7 @@ class CapabilityFactory:
                     "Business tools may execute only through Backend ToolExecutor.",
                     "Permissions and scopes are proposals, never grants.",
                 ],
+                "human_gate_required": True,
             },
         )
         agent_draft = (

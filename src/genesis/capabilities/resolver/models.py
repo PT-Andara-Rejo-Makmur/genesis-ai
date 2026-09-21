@@ -1,8 +1,14 @@
 """Typed, non-authoritative inputs and outputs for capability resolution."""
 
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SerializerFunctionWrapHandler,
+    model_serializer,
+)
 
 from genesis.capabilities.models.definition import CapabilityType
 
@@ -18,6 +24,7 @@ class Requirement(BaseModel):
     workspace_id: str = Field(min_length=3, max_length=128)
     actor_id: str = Field(min_length=3, max_length=128)
     correlation_id: str = Field(min_length=3, max_length=128)
+    requirement_id: str | None = Field(min_length=3, max_length=128, default=None)
     statement: str = Field(min_length=20, max_length=10_000)
     scope_refs: tuple[str, ...] = Field(min_length=1)
     permission_refs: tuple[str, ...] = ()
@@ -46,7 +53,21 @@ class CapabilityCatalogItem(BaseModel):
 
 
 class RequirementUnderstanding(BaseModel):
+    """Canonical, non-authoritative RequirementUnderstanding (contract v1).
+
+    `ambiguity` is a typed signal that must always be present so the Backend can
+    fail closed; the Backend — never the AI — decides what an ambiguity signal
+    means for governance.
+    """
+
     model_config = ConfigDict(extra="forbid", frozen=True)
+    requirement_id: str | None = None
+    objective: str | None = None
+    trigger: str | None = None
+    capability_need: tuple[str, ...] = ()
+    data_need: tuple[str, ...] = ()
+    source_semantics: tuple[str, ...] = ()
+    ambiguity: Literal["NONE", "NEEDS_CLARIFICATION"] = "NONE"
     normalized_intent: str
     domains: tuple[str, ...]
     candidate_capability_ids: tuple[str, ...]
@@ -54,6 +75,18 @@ class RequirementUnderstanding(BaseModel):
     risk_level: RiskLevel
     requires_agent: bool
     rationale: tuple[str, ...]
+
+    @model_serializer(mode="wrap")
+    def _omit_undetermined(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        """Omit optional semantics the AI did not determine instead of emitting null.
+
+        The frozen canonical schema types these fields as strings/arrays, so an
+        explicit JSON null would be an invalid contract payload for both GENESIS
+        and the ALOS Backend validator.
+        """
+
+        serialized = handler(self)
+        return {key: value for key, value in serialized.items() if value is not None}
 
 
 class CapabilityResolution(BaseModel):
@@ -72,3 +105,4 @@ class CapabilityResolution(BaseModel):
     activation_readiness: Literal[
         "READY_FOR_REUSE", "READY_FOR_DRAFT", "NEEDS_CONFIGURATION"
     ]
+    human_gate_required: bool = True

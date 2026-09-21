@@ -103,6 +103,7 @@ class CapabilityResolver:
             activation_readiness=(
                 "NEEDS_CONFIGURATION" if missing or unavailable else "READY_FOR_REUSE"
             ),
+            human_gate_required=True,
         )
 
     def understand(self, requirement: Requirement) -> RequirementUnderstanding:
@@ -133,6 +134,7 @@ class CapabilityResolver:
         if not requires_agent:
             rationale.append("Capability-first policy does not require an Agent runtime.")
         return RequirementUnderstanding(
+            requirement_id=requirement.requirement_id,
             normalized_intent=normalized,
             domains=domains,
             candidate_capability_ids=tuple(dict.fromkeys(candidates)),

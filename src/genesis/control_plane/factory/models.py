@@ -41,6 +41,7 @@ class FactoryExecutionContext(BaseModel):
 class FactoryRequirement(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     execution_context: FactoryExecutionContext
+    requirement_id: str | None = Field(min_length=3, max_length=128, default=None)
     statement: str = Field(min_length=20, max_length=10_000)
     preferred_capability_type: CapabilityType | None = None
 
@@ -52,6 +53,7 @@ class FactoryRequirement(BaseModel):
             workspace_id=context.workspace_id,
             actor_id=context.actor_id,
             correlation_id=context.correlation_id,
+            requirement_id=self.requirement_id,
             statement=self.statement,
             scope_refs=context.scope_refs,
             permission_refs=context.permission_refs,
