@@ -46,7 +46,6 @@ class SkillRuntime:
         *,
         authorization: SkillAuthorizationSnapshot,
         goal: str,
-        agent_allowed_tool_ids: Sequence[str] | None = None,
         capability_context: Sequence[str] = (),
         maximum_selected: int = 1,
     ) -> SkillRuntimeContext:
@@ -58,7 +57,6 @@ class SkillRuntime:
             backend_allowed_tool_ids=authorization.allowed_tool_ids,
             backend_permission_refs=authorization.permission_refs,
             backend_scope_refs=authorization.scope_refs,
-            agent_allowed_tool_ids=agent_allowed_tool_ids,
             capability_context=capability_context,
             maximum_selected=maximum_selected,
         )

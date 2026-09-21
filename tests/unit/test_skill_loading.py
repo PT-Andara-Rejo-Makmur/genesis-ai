@@ -87,6 +87,22 @@ def test_deprecated_tool_ids_are_accepted_but_ignored(tmp_path: Path) -> None:
     assert not hasattr(specification, "tool_ids")
 
 
+def test_canonical_governance_metadata_is_deprojected_from_runtime(tmp_path: Path) -> None:
+    package = tmp_path / "governed"
+    package.mkdir()
+    (package / "skill.yaml").write_text(
+        manifest(extra="owner_actor_id: actor_skill_owner\nrisk_level: HIGH"),
+        encoding="utf-8",
+    )
+    (package / "SKILL.md").write_text("# Safe instructions", encoding="utf-8")
+
+    specification = loader().discover(tmp_path)[0].specification
+
+    assert specification.skill_id == "skill.evidence.summary"
+    assert not hasattr(specification, "owner_actor_id")
+    assert not hasattr(specification, "risk_level")
+
+
 def test_skill_package_rejects_executable_files(tmp_path: Path) -> None:
     package = tmp_path / "unsafe"
     package.mkdir()

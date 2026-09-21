@@ -13,6 +13,7 @@ pytest.importorskip("sqlalchemy", reason="cross-repo harness requires Backend de
 WORKSPACE = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(WORKSPACE / "alos-backend" / "src"))
 
+from alos.agents.lifecycle import AgentRunAuthority, RunAuthorityError  # noqa: E402
 from alos.agents.registry import AgentRegistry  # noqa: E402
 from alos.audit import InMemoryAuditRepository  # noqa: E402
 from alos.contracts import CanonicalContractCatalog as BackendCatalog  # noqa: E402
@@ -31,7 +32,8 @@ from genesis.research import (  # noqa: E402
     ResearchRisk,
 )
 from genesis.research.sources import FreshnessStatus, SourceReliability  # noqa: E402
-from genesis.runtime.context import DataClassification  # noqa: E402
+from genesis.runtime.context import DataClassification, ExecutionContextView  # noqa: E402
+from genesis.runtime.limits import ExecutionBudget  # noqa: E402
 from genesis.skills.authorization import SkillAuthorizationSnapshot  # noqa: E402
 from genesis.skills.loader import FileSystemSkillLoader, SkillReference  # noqa: E402
 from genesis.skills.runtime import SkillRuntime, SkillRuntimeStatus  # noqa: E402
@@ -44,6 +46,41 @@ PACKAGES = {
     "management": "skill.research.management",
     "property_market": "skill.research.property_market",
 }
+
+
+async def activate_definition(
+    registry: AgentRegistry | SkillRegistry,
+    payload: dict[str, object],
+    *,
+    correlation_id: str,
+) -> object:
+    entry = await registry.register(
+        payload,
+        tenant_id="tenant_roundtrip",
+        organization_id="organization_roundtrip",
+        workspace_id="workspace_roundtrip",
+        actor_id="actor_skill_reviewer",
+        correlation_id=correlation_id,
+    )
+    entry = await registry.approve(
+        tenant_id=entry.tenant_id,
+        workspace_id=entry.workspace_id,
+        subject_id=entry.subject_id,
+        version=entry.version,
+        actor_id="actor_skill_reviewer",
+        decision_id=f"decision.{entry.subject_id}.{entry.version}",
+        authority="IT",
+        correlation_id=correlation_id,
+    )
+    return await registry.activate(
+        tenant_id=entry.tenant_id,
+        workspace_id=entry.workspace_id,
+        subject_id=entry.subject_id,
+        version=entry.version,
+        actor_id="actor_skill_reviewer",
+        release_id=f"release.{entry.subject_id}.{entry.version}",
+        correlation_id=correlation_id,
+    )
 
 
 def principal() -> Principal:
@@ -132,7 +169,7 @@ async def test_manifest_registry_agent_authorization_and_runtime_roundtrip(
         authority="IT",
         correlation_id="corr_roundtrip_001",
     )
-    await agents.activate(
+    active_agent = await agents.activate(
         tenant_id=actor.tenant_id,
         workspace_id=actor.workspace_id,
         subject_id=agent_approved.subject_id,
@@ -141,17 +178,48 @@ async def test_manifest_registry_agent_authorization_and_runtime_roundtrip(
         release_id="release_agent_roundtrip",
         correlation_id="corr_roundtrip_001",
     )
-    authorized = skills.get_authorized(principal=actor, subject_id=skill_id, version="1.0.0")
-    reference = SkillReference(skill_id=authorized.subject_id, skill_version=authorized.version)
-    snapshot = SkillAuthorizationSnapshot(
-        tenant_id=actor.tenant_id,
-        organization_id=actor.organization_id,
-        workspace_id=actor.workspace_id,
-        correlation_id="corr_roundtrip_001",
-        authorized_skill_refs=(reference,),
-        permission_refs=(),
-        scope_refs=("scope.research",),
-        allowed_tool_ids=(),
+    run_authority = AgentRunAuthority(contracts=contracts, audit=audit, skills=skills)
+    started = await run_authority.begin(
+        {
+            "run_id": f"run_{package}_roundtrip",
+            "root_run_id": f"run_{package}_roundtrip",
+            "agent_id": active_agent.subject_id,
+            "agent_version": active_agent.version,
+            "capability_id": "capability_research",
+            "execution_context": {
+                "tenant_id": actor.tenant_id,
+                "organization_id": actor.organization_id,
+                "workspace_id": actor.workspace_id,
+                "actor_id": actor.actor_id,
+                "authority_context": {"role": "runner", "authority_level": "SYSTEM"},
+                "permission_refs": [],
+                "allowed_tool_ids": [],
+                "scope_refs": ["scope.research"],
+                "data_classification": "INTERNAL",
+                "correlation_id": "corr_roundtrip_001",
+            },
+            "input": {"question": str(payload["name"])},
+            "requested_tool_ids": [],
+        },
+        agent=active_agent,
+    )
+    runtime_authorization = await run_authority.runtime_authorization(started.run_id)
+    context = ExecutionContextView(
+        **started.request["execution_context"],
+        execution_budget=ExecutionBudget(max_steps=1),
+    )
+    snapshot = SkillAuthorizationSnapshot.from_backend(
+        context,
+        authorized_skill_refs=tuple(
+            SkillReference.model_validate(item)
+            for item in runtime_authorization["authorized_skill_refs"]
+        ),
+        agent_skill_refs=tuple(
+            SkillReference.model_validate(item) for item in active_agent.payload["skill_refs"]
+        ),
+        agent_permission_refs=active_agent.payload["permission_refs"],
+        agent_scope_refs=active_agent.payload["scope_refs"],
+        agent_allowed_tool_ids=active_agent.payload["tool_ids"],
     )
     runtime = SkillRuntime(
         loader=FileSystemSkillLoader(contracts=CanonicalContractCatalog(CONTRACTS_ROOT))
@@ -163,11 +231,120 @@ async def test_manifest_registry_agent_authorization_and_runtime_roundtrip(
         maximum_selected=1,
     )
     assert draft.state.value == "DRAFT"
+    assert draft.payload == payload
     assert approved.state.value == "APPROVED"
+    assert started.authorized_skill_refs == ((skill_id, "1.0.0"),)
+    assert started.request["authorized_skill_refs"] == [
+        {"skill_id": skill_id, "skill_version": "1.0.0"}
+    ]
     assert result.status is SkillRuntimeStatus.READY
     assert result.loaded_skills[0].specification.skill_id == skill_id
     assert result.loaded_skills[0].specification.skill_version == "1.0.0"
     assert result.loaded_skills[0].instructions.startswith("#")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("scenario", "expected_code"),
+    [
+        ("injected", "SKILL_REF_NOT_ASSIGNED"),
+        ("inactive", "SKILL_NOT_ACTIVE"),
+        ("wrong_version", "SKILL_VERSION_NOT_FOUND"),
+        ("permission", "SKILL_PERMISSION_MISMATCH"),
+        ("scope", "SKILL_SCOPE_MISMATCH"),
+        ("tool", "SKILL_TOOL_MISMATCH"),
+    ],
+)
+async def test_cross_repo_run_authority_rejects_skill_expansion(
+    scenario: str,
+    expected_code: str,
+) -> None:
+    correlation_id = f"corr_cross_reject_{scenario}"
+    payload = yaml.safe_load(
+        (SKILLS_ROOT / "technology" / "skill.yaml").read_text(encoding="utf-8")
+    )
+    if scenario == "permission":
+        payload["permission_refs"] = ["permission.b"]
+    elif scenario == "scope":
+        payload["scope_refs"] = ["scope.y"]
+    elif scenario == "tool":
+        payload["required_tool_ids"] = ["tool.b"]
+
+    contracts = BackendCatalog(CONTRACTS_ROOT)
+    audit = InMemoryAuditRepository()
+    skills = SkillRegistry(contracts, audit)
+    agents = AgentRegistry(contracts, audit)
+    if scenario == "inactive":
+        await skills.register(
+            payload,
+            tenant_id="tenant_roundtrip",
+            organization_id="organization_roundtrip",
+            workspace_id="workspace_roundtrip",
+            actor_id="actor_skill_reviewer",
+            correlation_id=correlation_id,
+        )
+    else:
+        await activate_definition(skills, payload, correlation_id=correlation_id)
+
+    skill_ref = {"skill_id": payload["skill_id"], "skill_version": "1.0.0"}
+    agent_ref = (
+        {"skill_id": payload["skill_id"], "skill_version": "2.0.0"}
+        if scenario == "wrong_version"
+        else skill_ref
+    )
+    agent_skill_refs = [] if scenario == "injected" else [agent_ref]
+    agent_payload = {
+        "tenant_id": "tenant_roundtrip",
+        "organization_id": "organization_roundtrip",
+        "workspace_id": "workspace_roundtrip",
+        "agent_id": f"agent.cross.{scenario}",
+        "agent_version": "1.0.0",
+        "owner_actor_id": "actor_skill_reviewer",
+        "name": f"Cross repo {scenario}",
+        "purpose": "Prove fail-closed exact Skill authorization.",
+        "risk_level": "MEDIUM",
+        "capability_ids": ["capability_research"],
+        "skill_refs": agent_skill_refs,
+        "model_policy_ref": "model-policy.research",
+        "tool_ids": ["tool.a"],
+        "permission_refs": ["permission.a"],
+        "scope_refs": ["scope.x"],
+        "delegation_policy": {"enabled": False, "max_depth": 0},
+    }
+    active_agent = await activate_definition(
+        agents,
+        agent_payload,
+        correlation_id=correlation_id,
+    )
+    request = {
+        "run_id": f"run_cross_{scenario}",
+        "root_run_id": f"run_cross_{scenario}",
+        "agent_id": agent_payload["agent_id"],
+        "agent_version": "1.0.0",
+        "capability_id": "capability_research",
+        "execution_context": {
+            "tenant_id": "tenant_roundtrip",
+            "organization_id": "organization_roundtrip",
+            "workspace_id": "workspace_roundtrip",
+            "actor_id": "actor_skill_reviewer",
+            "authority_context": {"role": "runner", "authority_level": "SYSTEM"},
+            "permission_refs": ["permission.a", "permission.b"],
+            "allowed_tool_ids": ["tool.a", "tool.b"],
+            "scope_refs": ["scope.x", "scope.y"],
+            "data_classification": "INTERNAL",
+            "correlation_id": correlation_id,
+        },
+        "input": {"question": "attempt authority expansion"},
+        "requested_tool_ids": [],
+    }
+    if scenario == "injected":
+        request["authorized_skill_refs"] = [skill_ref]
+
+    authority = AgentRunAuthority(contracts=contracts, audit=audit, skills=skills)
+    with pytest.raises(RunAuthorityError) as raised:
+        await authority.begin(request, agent=active_agent)  # type: ignore[arg-type]
+
+    assert raised.value.code == expected_code
 
 
 def test_selected_research_skill_uses_internal_or_backend_external_boundary() -> None:

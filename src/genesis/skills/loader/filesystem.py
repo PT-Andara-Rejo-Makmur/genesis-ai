@@ -45,6 +45,9 @@ class FileSystemSkillLoader:
                     cast(Mapping[str, Any], document),
                 )
                 canonical.pop("tool_ids", None)
+                # Backend governance metadata is canonical but inert inside SkillRuntime.
+                canonical.pop("owner_actor_id", None)
+                canonical.pop("risk_level", None)
                 specification = SkillDefinition.model_validate(canonical)
             except (
                 OSError,

@@ -3,6 +3,8 @@ from pathlib import Path
 import pytest
 
 from genesis.contracts import CanonicalContractCatalog
+from genesis.runtime.context import DataClassification, ExecutionContextView
+from genesis.runtime.limits import ExecutionBudget
 from genesis.skills.authorization import SkillAuthorizationSnapshot
 from genesis.skills.loader import (
     FileSystemSkillLoader,
@@ -25,10 +27,14 @@ def write_package(
     version: str = "1.0.0",
     purpose: str = "Analyze technology architecture.",
     tool_ids: tuple[str, ...] = (),
+    permission_refs: tuple[str, ...] = (),
+    scope_refs: tuple[str, ...] = (),
 ) -> None:
     package = root / name
     package.mkdir()
     tools = ", ".join(tool_ids)
+    permissions = ", ".join(permission_refs)
+    scopes = ", ".join(scope_refs)
     (package / "skill.yaml").write_text(
         f"""
 skill_id: {skill_id}
@@ -41,6 +47,8 @@ input_schema_ref: https://schemas.alos.dev/v1/research/research-request.schema.j
 output_schema_ref: https://schemas.alos.dev/v1/research/research-result.schema.json
 procedure: [Analyze evidence.]
 required_tool_ids: [{tools}]
+permission_refs: [{permissions}]
+scope_refs: [{scopes}]
 evidence_requirements: [Cite evidence.]
 restrictions: [Do not execute actions.]
 failure_modes: [Insufficient evidence.]
@@ -77,6 +85,22 @@ def authorization(
         permission_refs=permissions,
         scope_refs=scopes,
         allowed_tool_ids=tools,
+    )
+
+
+def execution_context() -> ExecutionContextView:
+    return ExecutionContextView(
+        tenant_id="tenant_test",
+        organization_id="organization_test",
+        workspace_id="workspace_test",
+        actor_id="actor_test",
+        authority_context={"role": "runner", "authority_level": "SYSTEM"},
+        permission_refs=("permission.a", "permission.b"),
+        allowed_tool_ids=("tool.a", "tool.b"),
+        scope_refs=("scope.x", "scope.y"),
+        data_classification=DataClassification.INTERNAL,
+        correlation_id="corr_skill_test",
+        execution_budget=ExecutionBudget(max_steps=1),
     )
 
 
@@ -225,3 +249,75 @@ def test_permission_and_scope_prerequisites_fail_closed(tmp_path: Path) -> None:
     )
     assert result.selected == ()
     assert result.unavailable[0].status is SkillSelectionStatus.REQUIRED_PERMISSION_UNAVAILABLE
+
+
+@pytest.mark.parametrize(
+    ("permissions", "scopes", "tools", "expected_status"),
+    [
+        (("permission.b",), (), (), SkillSelectionStatus.REQUIRED_PERMISSION_UNAVAILABLE),
+        ((), ("scope.y",), (), SkillSelectionStatus.REQUIRED_SCOPE_UNAVAILABLE),
+        ((), (), ("tool.b",), SkillSelectionStatus.REQUIRED_TOOL_UNAVAILABLE),
+    ],
+)
+def test_runtime_uses_agent_narrowed_authority_for_every_dimension(
+    tmp_path: Path,
+    permissions: tuple[str, ...],
+    scopes: tuple[str, ...],
+    tools: tuple[str, ...],
+    expected_status: SkillSelectionStatus,
+) -> None:
+    write_package(
+        tmp_path,
+        "technology",
+        skill_id="skill.research.technology",
+        permission_refs=permissions,
+        scope_refs=scopes,
+        tool_ids=tools,
+    )
+    narrowed = SkillAuthorizationSnapshot.from_backend(
+        execution_context(),
+        authorized_skill_refs=(reference("skill.research.technology"),),
+        agent_skill_refs=(reference("skill.research.technology"),),
+        agent_permission_refs=("permission.a",),
+        agent_scope_refs=("scope.x",),
+        agent_allowed_tool_ids=("tool.a",),
+    )
+
+    result = SkillRuntime(loader=loader()).prepare(
+        tmp_path,
+        authorization=narrowed,
+        goal="technology architecture",
+    )
+
+    assert narrowed.permission_refs == ("permission.a",)
+    assert narrowed.scope_refs == ("scope.x",)
+    assert narrowed.allowed_tool_ids == ("tool.a",)
+    assert result.status is SkillRuntimeStatus.BLOCKED
+    assert result.selection.unavailable[0].status is expected_status
+
+
+def test_runtime_accepts_skill_with_matching_narrowed_authority(tmp_path: Path) -> None:
+    write_package(
+        tmp_path,
+        "technology",
+        skill_id="skill.research.technology",
+        permission_refs=("permission.a",),
+        scope_refs=("scope.x",),
+        tool_ids=("tool.a",),
+    )
+    narrowed = SkillAuthorizationSnapshot.from_backend(
+        execution_context(),
+        authorized_skill_refs=(reference("skill.research.technology"),),
+        agent_skill_refs=(reference("skill.research.technology"),),
+        agent_permission_refs=("permission.a",),
+        agent_scope_refs=("scope.x",),
+        agent_allowed_tool_ids=("tool.a",),
+    )
+
+    result = SkillRuntime(loader=loader()).prepare(
+        tmp_path,
+        authorization=narrowed,
+        goal="technology architecture",
+    )
+
+    assert result.status is SkillRuntimeStatus.READY
