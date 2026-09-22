@@ -5,6 +5,9 @@ import json
 from enum import Enum
 from typing import Any
 
+from jsonschema import Draft202012Validator
+from jsonschema.exceptions import SchemaError
+
 from genesis.orchestration.delegation.models import (
     AuthorizedChildTarget,
     ChildAuthorityRequest,
@@ -16,7 +19,9 @@ from genesis.orchestration.delegation.models import (
 
 
 class DelegationPlanningError(ValueError):
-    pass
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
 
 
 def _normalize(value: Any) -> Any:
@@ -58,7 +63,11 @@ class DelegationPlanner:
             snapshot, target_agent_id, target_agent_version, capability_id
         )
         if task.domain is not None and task.domain not in target.research_domains:
-            raise DelegationPlanningError("Authorized child target does not support task domain")
+            raise DelegationPlanningError(
+                "RESEARCH_DOMAIN_DENIED",
+                "Authorized child target does not support task domain",
+            )
+        self.validate_task(target, task)
         ancestry = (*snapshot.ancestry_agent_refs, self._parent_ref(snapshot))
         fields = {
             "parent_run_id": snapshot.parent_run_id,
@@ -93,10 +102,60 @@ class DelegationPlanner:
             None,
         )
         if target is None:
-            raise DelegationPlanningError("Exact child target is not authorized")
+            raise DelegationPlanningError(
+                "CHILD_TARGET_DENIED", "Exact child target is not authorized"
+            )
         if capability_id not in target.capability_ids:
-            raise DelegationPlanningError("Child capability is not authorized")
+            raise DelegationPlanningError(
+                "CHILD_CAPABILITY_DENIED", "Child capability is not authorized"
+            )
         return target
+
+    @classmethod
+    def validate_intent_task(
+        cls,
+        snapshot: DelegationAuthorizationSnapshot,
+        intent: DelegationIntent,
+    ) -> AuthorizedChildTarget:
+        target = cls._exact_target(
+            snapshot,
+            intent.target_agent_id,
+            intent.target_agent_version,
+            intent.target_capability_id,
+        )
+        if intent.task.domain is not None and intent.task.domain not in target.research_domains:
+            raise DelegationPlanningError(
+                "RESEARCH_DOMAIN_DENIED", "Child target does not support task domain"
+            )
+        cls.validate_task(target, intent.task)
+        return target
+
+    @staticmethod
+    def validate_task(target: AuthorizedChildTarget, task: ChildTaskSpec) -> None:
+        try:
+            Draft202012Validator.check_schema(task.expected_result_schema)
+        except SchemaError as exc:
+            raise DelegationPlanningError(
+                "CHILD_TASK_SCHEMA_INVALID", "Expected result schema is invalid"
+            ) from exc
+        if target.input_schema is not None:
+            try:
+                Draft202012Validator.check_schema(target.input_schema)
+            except SchemaError as exc:
+                raise DelegationPlanningError(
+                    "CHILD_TARGET_INPUT_SCHEMA_INVALID", "Target input schema is invalid"
+                ) from exc
+            if list(Draft202012Validator(target.input_schema).iter_errors(task.input)):
+                raise DelegationPlanningError(
+                    "CHILD_INPUT_INVALID", "Child task input violates target schema"
+                )
+        if target.output_schema is not None:
+            try:
+                Draft202012Validator.check_schema(target.output_schema)
+            except SchemaError as exc:
+                raise DelegationPlanningError(
+                    "CHILD_TARGET_OUTPUT_SCHEMA_INVALID", "Target output schema is invalid"
+                ) from exc
 
     @staticmethod
     def _parent_ref(snapshot: DelegationAuthorizationSnapshot) -> str:
@@ -125,7 +184,9 @@ class ResearchDomainDelegationPolicy:
             None,
         )
         if target is None:
-            raise DelegationPlanningError("No exact authorized target supports the domain")
+            raise DelegationPlanningError(
+                "CHILD_TARGET_DENIED", "No exact authorized target supports the domain"
+            )
         task = ChildTaskSpec(
             child_task_id=request.child_task_id,
             goal=request.goal,

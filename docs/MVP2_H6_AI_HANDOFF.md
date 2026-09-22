@@ -23,6 +23,13 @@ canonical contracts and do not grant child authority.
 - Persistent parent/child/root lineage and server-side inheritance enforcement.
 - Persistent concurrency/depth accounting, cancellation propagation, retry, audit, and cost.
 - The actual child `AgentRunRequest`; GENESIS never mints authoritative child run IDs.
+- An authoritative delegation snapshot (or equivalent server-side session) bound to the current
+  parent run, root, Agent/version, identity, effective authority, and ExecutionBudget.
+- True server-side child count, active concurrency, depth, and tree-wide budget accounting.
+
+GENESIS validates the supplied snapshot against the current parent request and runtime authority
+before exposing delegation, but these checks remain defense in depth. Backend must bind the
+snapshot/session server-side and repeat all authority and capacity decisions at child creation.
 
 ## Contract gaps for H9
 
@@ -32,6 +39,7 @@ canonical contracts and do not grant child authority.
 - Research source/egress inheritance.
 - Multi-child/tree usage accounting.
 - Cancellation propagation representation.
+- Canonical snapshot/session binding and exact target input/output schema metadata.
 
 Until H9 closes these gaps, the Backend adapter remains a port only. GENESIS performs local
 fail-closed preflight but does not claim that preflight is authoritative.

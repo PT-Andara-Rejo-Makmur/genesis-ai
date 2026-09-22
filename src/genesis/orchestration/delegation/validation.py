@@ -3,10 +3,12 @@
 from typing import Any
 
 from jsonschema import Draft202012Validator
+from jsonschema.exceptions import SchemaError
 
 from genesis.contracts import CanonicalContractCatalog, ContractValidationError
 from genesis.orchestration.delegation.models import (
     AuthorityEnvelope,
+    AuthorizedChildTarget,
     ChildObservation,
     DelegationIntent,
 )
@@ -36,6 +38,7 @@ class ChildResultValidator:
         payload: dict[str, Any],
         *,
         intent: DelegationIntent,
+        target: AuthorizedChildTarget,
         correlation_id: str,
         parent_authority: AuthorityEnvelope,
     ) -> ChildObservation:
@@ -55,6 +58,12 @@ class ChildResultValidator:
         if result.get("capability_id") not in {None, intent.target_capability_id}:
             raise ChildResultInvalid("CHILD_RESULT_CAPABILITY_MISMATCH", "Capability mismatch")
         if result["status"] == "COMPLETED":
+            try:
+                Draft202012Validator.check_schema(intent.task.expected_result_schema)
+            except SchemaError as exc:
+                raise ChildResultInvalid(
+                    "CHILD_TASK_SCHEMA_INVALID", "Expected result schema is invalid"
+                ) from exc
             errors = list(
                 Draft202012Validator(intent.task.expected_result_schema).iter_errors(
                     result.get("output")
@@ -62,6 +71,24 @@ class ChildResultValidator:
             )
             if errors:
                 raise ChildResultInvalid("CHILD_OUTPUT_SCHEMA_INVALID", "Child output invalid")
+            if target.output_schema is not None:
+                try:
+                    Draft202012Validator.check_schema(target.output_schema)
+                except SchemaError as exc:
+                    raise ChildResultInvalid(
+                        "CHILD_TARGET_OUTPUT_SCHEMA_INVALID",
+                        "Target output schema is invalid",
+                    ) from exc
+                target_errors = list(
+                    Draft202012Validator(target.output_schema).iter_errors(
+                        result.get("output")
+                    )
+                )
+                if target_errors:
+                    raise ChildResultInvalid(
+                        "CHILD_OUTPUT_TARGET_SCHEMA_INVALID",
+                        "Child output violates the exact target schema",
+                    )
         evidence = tuple(result.get("evidence_refs", []))
         for item in evidence:
             self._validate_evidence(item, parent_authority)

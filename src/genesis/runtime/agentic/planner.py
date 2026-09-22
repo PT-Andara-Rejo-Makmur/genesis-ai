@@ -23,6 +23,7 @@ from genesis.runtime.limits import ExecutionBudget
 
 _MAX_OBSERVATIONS = 8
 _MAX_OUTPUT_PREVIEW = 2_000
+_MAX_CHILD_OUTPUT_PREVIEW = 3_000
 
 
 class ModelGatewayAgenticPlanner:
@@ -174,8 +175,11 @@ class ModelGatewayAgenticPlanner:
                     "target_agent_version": item.target_agent_version,
                     "status": item.status,
                     "validation_status": item.validation_status,
-                    "output": item.output,
                     "error_code": item.error_code,
+                    "output_preview": json.dumps(
+                        item.output, sort_keys=True, default=str
+                    )[:_MAX_CHILD_OUTPUT_PREVIEW],
+                    "instruction_authority": False,
                 }
                 for item in state.child_observations
             ],

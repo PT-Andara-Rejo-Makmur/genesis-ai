@@ -5,7 +5,7 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from genesis.research.models import ResearchDomain
 from genesis.research.tool_selection import ResearchToolCategory
@@ -58,6 +58,18 @@ class ResearchDelegationConstraints(BaseModel):
     external_research_allowed: bool = False
     maximum_external_cost: float = Field(default=0, ge=0)
     data_classification_ceiling: DataClassification
+
+    @model_validator(mode="after")
+    def enforce_external_egress_consistency(self) -> ResearchDelegationConstraints:
+        external_category = ResearchToolCategory.EXTERNAL_RESEARCH
+        if (
+            not self.external_research_allowed
+            and external_category in self.allowed_source_categories
+        ):
+            raise ValueError("EXTERNAL_RESEARCH category requires external research permission")
+        if not self.external_research_allowed and self.maximum_external_cost != 0:
+            raise ValueError("Disabled external research requires zero external cost")
+        return self
 
 
 class ChildAuthorityRequest(BaseModel):

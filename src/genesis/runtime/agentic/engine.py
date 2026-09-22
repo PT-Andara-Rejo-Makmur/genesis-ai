@@ -63,12 +63,19 @@ from genesis.runtime.agentic.state import (
     select_evidence,
 )
 from genesis.runtime.agentic.stopping import StoppingPolicy
+from genesis.runtime.context import DataClassification
 from genesis.runtime.limits import ExecutionBudget
 
 AGENT_RUN_REQUEST_SCHEMA = "https://schemas.alos.dev/v1/agent/agent-run-request.schema.json"
 AGENT_RUN_RESULT_SCHEMA = "https://schemas.alos.dev/v1/agent/agent-run-result.schema.json"
 TOOL_REQUEST_SCHEMA = "https://schemas.alos.dev/v1/tool/tool-request.schema.json"
 TOOL_RESULT_SCHEMA = "https://schemas.alos.dev/v1/tool/tool-result.schema.json"
+_CLASSIFICATION_RANK = {
+    DataClassification.PUBLIC.value: 0,
+    DataClassification.INTERNAL.value: 1,
+    DataClassification.CONFIDENTIAL.value: 2,
+    DataClassification.RESTRICTED.value: 3,
+}
 
 
 class AgentRuntimeEngine:
@@ -180,6 +187,9 @@ class AgentRuntimeEngine:
         )
         known_evidence_catalog = known_evidence(request)
         legacy_plan: ExecutionPlan | None = None
+        delegation_snapshot = self._validate_delegation_snapshot(
+            definition, request, authorization, budget, state
+        )
 
         while state.step_count < required_limit(budget.max_steps, "max_steps"):
             await self._require_not_cancelled(state)
@@ -193,7 +203,7 @@ class AgentRuntimeEngine:
             state = state.model_copy(update={"step_count": state.step_count + 1})
             self._safe_notify(self._observer.on_step_started, state)
             planner_request = self._planner_request(
-                definition, request, authorization, state
+                definition, request, authorization, state, delegation_snapshot
             )
             try:
                 decision, legacy_plan = await self._next_decision(
@@ -258,6 +268,7 @@ class AgentRuntimeEngine:
                     state,
                     decision,
                     known_evidence_catalog,
+                    delegation_snapshot,
                 )
                 continue
             if decision.kind is AgenticActionKind.FINISH:
@@ -454,8 +465,8 @@ class AgentRuntimeEngine:
         state: AgenticRuntimeState,
         decision: AgenticDecision,
         known_evidence_catalog: dict[str, dict[str, Any]],
+        snapshot: DelegationAuthorizationSnapshot | None,
     ) -> AgenticRuntimeState:
-        snapshot = self._delegation_authorization
         client = self._delegation_client
         intent = decision.delegation_intent
         if snapshot is None or client is None:
@@ -479,8 +490,8 @@ class AgentRuntimeEngine:
             except DelegationPlanningError as exc:
                 raise fail(
                     state,
-                    "CHILD_TARGET_DENIED",
-                    "The proposed exact child target is not authorized.",
+                    exc.code,
+                    "The proposed child task is not authorized or schema-valid.",
                     StopReason.DELEGATION_DENIED,
                 ) from exc
         if intent is None:
@@ -490,6 +501,15 @@ class AgentRuntimeEngine:
                 "A structured delegation proposal is required.",
                 StopReason.DELEGATION_DENIED,
             )
+        try:
+            target = DelegationPlanner.validate_intent_task(snapshot, intent)
+        except DelegationPlanningError as exc:
+            raise fail(
+                state,
+                exc.code,
+                "The child intent is not authorized or schema-valid.",
+                StopReason.DELEGATION_DENIED,
+            ) from exc
         try:
             self._delegation_guard.validate(
                 snapshot,
@@ -532,12 +552,16 @@ class AgentRuntimeEngine:
             observation = self._child_validator.validate(
                 raw_result,
                 intent=intent,
+                target=target,
                 correlation_id=state.correlation_id,
                 parent_authority=snapshot.effective_parent_authority,
             )
         except ChildResultInvalid as exc:
             observation = self._child_validator.invalid_observation(intent, exc.code)
-        if observation.validation_status == "VALID":
+        if (
+            observation.validation_status == "VALID"
+            and observation.status == "COMPLETED"
+        ):
             for evidence in observation.evidence_refs:
                 known_evidence_catalog[str(evidence["evidence_id"])] = evidence
         return submitted.model_copy(
@@ -721,6 +745,7 @@ class AgentRuntimeEngine:
         request: dict[str, Any],
         authorization: RuntimeAuthorization,
         state: AgenticRuntimeState,
+        snapshot: DelegationAuthorizationSnapshot | None,
     ) -> dict[str, Any]:
         effective = sorted(
             set(cast(list[str], request.get("requested_tool_ids", [])))
@@ -728,8 +753,8 @@ class AgentRuntimeEngine:
             .intersection(authorization.allowed_tool_ids)
         )
         projection: dict[str, Any] = {**request, "requested_tool_ids": effective}
-        snapshot = self._delegation_authorization
-        if snapshot is not None and snapshot.enabled:
+        if self._delegation_feasible(snapshot, state):
+            assert snapshot is not None
             authority = snapshot.effective_parent_authority
             projection["_delegation"] = {
                 "authorized_child_targets": [
@@ -760,3 +785,154 @@ class AgentRuntimeEngine:
                 ),
             }
         return projection
+
+    def _validate_delegation_snapshot(
+        self,
+        definition: AgentDefinition,
+        request: dict[str, Any],
+        authorization: RuntimeAuthorization,
+        parent_budget: ExecutionBudget,
+        state: AgenticRuntimeState,
+    ) -> DelegationAuthorizationSnapshot | None:
+        snapshot = self._delegation_authorization
+        if snapshot is None:
+            return None
+
+        def reject(code: str, message: str) -> None:
+            raise fail(state, code, message, StopReason.DELEGATION_DENIED)
+
+        if snapshot.parent_run_id != request["run_id"]:
+            reject(
+                "DELEGATION_SNAPSHOT_RUN_MISMATCH",
+                "Delegation snapshot does not belong to the current parent run.",
+            )
+        if snapshot.root_run_id != request["root_run_id"]:
+            reject(
+                "DELEGATION_SNAPSHOT_ROOT_MISMATCH",
+                "Delegation snapshot does not belong to the current root run.",
+            )
+        if snapshot.parent_agent_id != definition.agent_id:
+            reject(
+                "DELEGATION_SNAPSHOT_AGENT_MISMATCH",
+                "Delegation snapshot does not belong to the current Agent.",
+            )
+        if snapshot.parent_agent_version != definition.agent_version:
+            reject(
+                "DELEGATION_SNAPSHOT_AGENT_VERSION_MISMATCH",
+                "Delegation snapshot does not belong to the current Agent version.",
+            )
+
+        context = cast(dict[str, Any], request["execution_context"])
+        authority = snapshot.effective_parent_authority
+        if any(
+            authority_value != context.get(context_key)
+            for authority_value, context_key in (
+                (authority.tenant_id, "tenant_id"),
+                (authority.organization_id, "organization_id"),
+                (authority.workspace_id, "workspace_id"),
+            )
+        ):
+            reject(
+                "DELEGATION_SNAPSHOT_IDENTITY_MISMATCH",
+                "Delegation snapshot identity does not match the current context.",
+            )
+        if not authority.permission_refs.issubset(
+            set(cast(list[str], context.get("permission_refs", [])))
+        ):
+            reject(
+                "DELEGATION_SNAPSHOT_PERMISSION_EXPANSION",
+                "Delegation snapshot expands current permissions.",
+            )
+        if not authority.scope_refs.issubset(
+            set(cast(list[str], context.get("scope_refs", [])))
+        ):
+            reject(
+                "DELEGATION_SNAPSHOT_SCOPE_EXPANSION",
+                "Delegation snapshot expands current scopes.",
+            )
+        effective_tools = (
+            set(cast(list[str], context.get("allowed_tool_ids", [])))
+            .intersection(definition.allowed_tool_ids)
+            .intersection(authorization.allowed_tool_ids)
+            .intersection(cast(list[str], request.get("requested_tool_ids", [])))
+        )
+        if not authority.allowed_tool_ids.issubset(effective_tools):
+            reject(
+                "DELEGATION_SNAPSHOT_TOOL_EXPANSION",
+                "Delegation snapshot expands current effective tool authority.",
+            )
+        current_classification = str(context.get("data_classification"))
+        if (
+            current_classification not in _CLASSIFICATION_RANK
+            or _CLASSIFICATION_RANK[authority.data_classification.value]
+            > _CLASSIFICATION_RANK[current_classification]
+        ):
+            reject(
+                "DELEGATION_SNAPSHOT_CLASSIFICATION_EXPANSION",
+                "Delegation snapshot expands the current data classification.",
+            )
+        if not parent_budget.contains(snapshot.parent_budget):
+            reject(
+                "DELEGATION_SNAPSHOT_BUDGET_EXPANSION",
+                "Delegation snapshot budget exceeds the current parent budget.",
+            )
+        if (
+            snapshot.parent_budget.max_depth is not None
+            and snapshot.max_depth > snapshot.parent_budget.max_depth
+        ):
+            reject(
+                "DELEGATION_SNAPSHOT_LIMIT_EXPANSION",
+                "Delegation max depth exceeds the snapshot parent budget.",
+            )
+        if (
+            snapshot.parent_budget.max_children is not None
+            and snapshot.max_children > snapshot.parent_budget.max_children
+        ):
+            reject(
+                "DELEGATION_SNAPSHOT_LIMIT_EXPANSION",
+                "Delegation max children exceeds the snapshot parent budget.",
+            )
+        if (
+            snapshot.concurrency_preflight_limit is not None
+            and snapshot.parent_budget.concurrency_limit is not None
+            and snapshot.concurrency_preflight_limit
+            > snapshot.parent_budget.concurrency_limit
+        ):
+            reject(
+                "DELEGATION_SNAPSHOT_LIMIT_EXPANSION",
+                "Delegation concurrency exceeds the snapshot parent budget.",
+            )
+        return snapshot
+
+    @staticmethod
+    def _delegation_feasible(
+        snapshot: DelegationAuthorizationSnapshot | None,
+        state: AgenticRuntimeState,
+    ) -> bool:
+        if snapshot is None or not snapshot.enabled or not snapshot.allowed_child_targets:
+            return False
+        depth_limit = snapshot.max_depth
+        if snapshot.parent_budget.max_depth is not None:
+            depth_limit = min(depth_limit, snapshot.parent_budget.max_depth)
+        if snapshot.parent_depth >= depth_limit:
+            return False
+        child_limit = snapshot.max_children
+        if snapshot.parent_budget.max_children is not None:
+            child_limit = min(child_limit, snapshot.parent_budget.max_children)
+        if len(state.child_observations) >= child_limit:
+            return False
+        if (
+            snapshot.parent_budget.max_tokens is not None
+            and state.consumed_tokens + state.reserved_child_tokens
+            >= snapshot.parent_budget.max_tokens
+        ):
+            return False
+        if (
+            snapshot.parent_budget.max_cost is not None
+            and state.estimated_cost + state.reserved_child_cost
+            >= snapshot.parent_budget.max_cost
+        ):
+            return False
+        return snapshot.concurrency_preflight_limit is None or (
+            snapshot.concurrency_preflight_limit > 0
+        )

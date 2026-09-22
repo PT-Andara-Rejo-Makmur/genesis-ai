@@ -224,3 +224,43 @@ def test_h5_runtime_defines_no_executor_persistence_or_governance_mutation() -> 
                 if node.func.id in {"eval", "exec", "__import__"}:
                     violations.append(f"{path.relative_to(ROOT)} calls {node.func.id}")
     assert violations == []
+
+
+def test_h6_delegation_has_no_io_recursion_persistence_scheduler_or_h7_engine() -> None:
+    forbidden_imports = (
+        *FORBIDDEN_BACKEND_IMPLEMENTATION_IMPORTS,
+        *DIRECT_PROVIDER_IMPORTS,
+        "httpx",
+        "requests",
+        "urllib",
+        "genesis.runtime.agentic.engine",
+    )
+    forbidden_classes = {
+        "ToolExecutor",
+        "ChildRunRepository",
+        "DelegationScheduler",
+        "DelegationQueue",
+        "ResearchOrchestrator",
+    }
+    forbidden_functions = {
+        "persist_child",
+        "schedule_child",
+        "enqueue_child",
+        "approve",
+        "release",
+    }
+    violations: list[str] = []
+    for path in (SOURCE / "orchestration" / "delegation").rglob("*.py"):
+        for module in imported_modules(path):
+            if module.startswith(forbidden_imports):
+                violations.append(f"{path.relative_to(ROOT)} imports {module}")
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ClassDef) and node.name in forbidden_classes:
+                violations.append(f"{path.relative_to(ROOT)} defines {node.name}")
+            if (
+                isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                and node.name in forbidden_functions
+            ):
+                violations.append(f"{path.relative_to(ROOT)} defines {node.name}")
+    assert violations == []

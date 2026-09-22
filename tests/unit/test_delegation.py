@@ -218,6 +218,11 @@ def validator() -> ChildResultValidator:
     return ChildResultValidator(CanonicalContractCatalog(CONTRACTS_ROOT))
 
 
+def technology_target(**changes: Any) -> AuthorizedChildTarget:
+    base = next(item for item in targets() if item.agent_id == "agent_technology")
+    return base.model_copy(update=changes)
+
+
 def test_planner_preserves_structured_task_and_exact_target() -> None:
     planned = intent()
     assert planned.target_agent_id == "agent_technology"
@@ -490,6 +495,7 @@ def test_canonical_child_result_identity_output_and_evidence_validate() -> None:
     observation = validator().validate(
         child_result(),
         intent=intent(),
+        target=technology_target(),
         correlation_id="corr_h6_001",
         parent_authority=authority(),
     )
@@ -503,6 +509,7 @@ def test_external_child_evidence_remains_untrusted_and_non_instructional() -> No
     observation = validator().validate(
         child_result(evidence_refs=[external]),
         intent=intent(),
+        target=technology_target(),
         correlation_id="corr_h6_001",
         parent_authority=authority(),
     )
@@ -526,6 +533,7 @@ def test_canonical_child_failure_statuses_are_structured(status: str) -> None:
     observation = validator().validate(
         payload,
         intent=intent(),
+        target=technology_target(),
         correlation_id="corr_h6_001",
         parent_authority=authority(),
     )
@@ -550,6 +558,7 @@ def test_child_result_mismatch_fails_closed(change: dict[str, Any], code: str) -
         validator().validate(
             child_result(**change),
             intent=intent(),
+            target=technology_target(),
             correlation_id="corr_h6_001",
             parent_authority=authority(),
         )
@@ -572,9 +581,130 @@ def test_invalid_child_evidence_never_enters_parent(evidence_change: dict[str, A
         validator().validate(
             child_result(evidence_refs=[evidence(**evidence_change)]),
             intent=intent(),
+            target=technology_target(),
             correlation_id="corr_h6_001",
             parent_authority=authority(),
         )
+
+
+@pytest.mark.parametrize(
+    ("target_change", "task_change", "code"),
+    (
+        ({}, {"expected_result_schema": {"type": "not-a-json-type"}}, "CHILD_TASK_SCHEMA_INVALID"),
+        (
+            {"input_schema": {"type": "not-a-json-type"}},
+            {},
+            "CHILD_TARGET_INPUT_SCHEMA_INVALID",
+        ),
+        (
+            {"output_schema": {"type": "not-a-json-type"}},
+            {},
+            "CHILD_TARGET_OUTPUT_SCHEMA_INVALID",
+        ),
+        (
+            {
+                "input_schema": {
+                    "type": "object",
+                    "required": ["authorized"],
+                    "properties": {"authorized": {"const": True}},
+                }
+            },
+            {},
+            "CHILD_INPUT_INVALID",
+        ),
+    ),
+)
+def test_child_task_and_target_schema_preflight(
+    target_change: dict[str, Any], task_change: dict[str, Any], code: str
+) -> None:
+    target = technology_target(**target_change)
+    with pytest.raises(DelegationPlanningError) as raised:
+        DelegationPlanner.validate_task(target, task(**task_change))
+    assert raised.value.code == code
+
+
+def test_child_output_must_satisfy_exact_target_schema() -> None:
+    target = technology_target(
+        output_schema={
+            "type": "object",
+            "required": ["summary", "confidence"],
+            "properties": {
+                "summary": {"type": "string"},
+                "confidence": {"type": "number"},
+            },
+        }
+    )
+    with pytest.raises(ChildResultInvalid) as raised:
+        validator().validate(
+            child_result(),
+            intent=intent(),
+            target=target,
+            correlation_id="corr_h6_001",
+            parent_authority=authority(),
+        )
+    assert raised.value.code == "CHILD_OUTPUT_TARGET_SCHEMA_INVALID"
+
+
+def test_child_output_satisfying_task_and_target_schemas_is_accepted() -> None:
+    target = technology_target(
+        output_schema={
+            "type": "object",
+            "required": ["summary"],
+            "properties": {"summary": {"type": "string"}},
+        }
+    )
+    observation = validator().validate(
+        child_result(),
+        intent=intent(),
+        target=target,
+        correlation_id="corr_h6_001",
+        parent_authority=authority(),
+    )
+    assert observation.validation_status == "VALID"
+
+
+def test_invalid_target_output_schema_fails_closed_during_result_validation() -> None:
+    with pytest.raises(ChildResultInvalid) as raised:
+        validator().validate(
+            child_result(),
+            intent=intent(),
+            target=technology_target(output_schema={"type": "not-a-json-type"}),
+            correlation_id="corr_h6_001",
+            parent_authority=authority(),
+        )
+    assert raised.value.code == "CHILD_TARGET_OUTPUT_SCHEMA_INVALID"
+
+
+@pytest.mark.parametrize(
+    "changes",
+    (
+        {
+            "allowed_source_categories": frozenset(
+                {ResearchToolCategory.EXTERNAL_RESEARCH}
+            )
+        },
+        {"maximum_external_cost": 1},
+    ),
+)
+def test_disabled_external_research_constraints_reject_contradictions(
+    changes: dict[str, Any],
+) -> None:
+    with pytest.raises(ValueError):
+        research_constraints(**changes)
+
+
+def test_external_research_constraints_accept_explicit_enabled_policy() -> None:
+    constraints = research_constraints(
+        external_research_allowed=True,
+        maximum_external_cost=1,
+        allowed_source_categories=frozenset(
+            {
+                ResearchToolCategory.INTERNAL_DOCUMENT,
+                ResearchToolCategory.EXTERNAL_RESEARCH,
+            }
+        ),
+    )
+    assert constraints.external_research_allowed is True
 
 
 def observation(task_id: str, status: str, *, valid: bool = True) -> ChildObservation:
