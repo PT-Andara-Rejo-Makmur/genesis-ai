@@ -264,3 +264,57 @@ def test_h6_delegation_has_no_io_recursion_persistence_scheduler_or_h7_engine() 
             ):
                 violations.append(f"{path.relative_to(ROOT)} defines {node.name}")
     assert violations == []
+
+
+def test_h7_research_orchestration_has_no_io_provider_or_authority_bypass() -> None:
+    forbidden_imports = (
+        *FORBIDDEN_BACKEND_IMPLEMENTATION_IMPORTS,
+        *DIRECT_PROVIDER_IMPORTS,
+        *FORBIDDEN_DOMAIN_IMPORTS,
+        "httpx",
+        "requests",
+        "urllib",
+    )
+    forbidden_classes = {
+        "ToolExecutor",
+        "SourceRegistry",
+        "ResearchRepository",
+        "ApprovalService",
+        "BacklogService",
+    }
+    forbidden_functions = {
+        "approve",
+        "release",
+        "persist",
+        "save",
+        "create_backlog_item",
+    }
+    violations: list[str] = []
+    for path in (SOURCE / "research" / "orchestration").rglob("*.py"):
+        for module in imported_modules(path):
+            if module.startswith(forbidden_imports):
+                violations.append(f"{path.relative_to(ROOT)} imports {module}")
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ClassDef) and node.name in forbidden_classes:
+                violations.append(f"{path.relative_to(ROOT)} defines {node.name}")
+            if (
+                isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                and node.name in forbidden_functions
+            ):
+                violations.append(f"{path.relative_to(ROOT)} defines {node.name}")
+    assert violations == []
+
+
+def test_h7_uses_one_generic_orchestrator_for_all_research_domains() -> None:
+    definitions: list[str] = []
+    for path in (SOURCE / "research").rglob("*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        definitions.extend(
+            f"{path.relative_to(ROOT).as_posix()}:{node.name}"
+            for node in ast.walk(tree)
+            if isinstance(node, ast.ClassDef) and node.name.endswith("ResearchOrchestrator")
+        )
+    assert definitions == [
+        "src/genesis/research/orchestration/service.py:ResearchOrchestrator"
+    ]

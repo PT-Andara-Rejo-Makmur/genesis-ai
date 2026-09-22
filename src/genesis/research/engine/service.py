@@ -6,7 +6,7 @@ import hashlib
 import json
 from collections.abc import Mapping
 from datetime import UTC, datetime
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
@@ -15,6 +15,9 @@ from genesis.control_plane.factory.prompts import version_prompt
 from genesis.model_gateway.interfaces import ModelGateway
 from genesis.model_gateway.types import ModelRequest
 from genesis.runtime.limits import ExecutionBudget
+
+if TYPE_CHECKING:
+    from genesis.research.orchestration import ResearchOrchestrator
 
 RESEARCH_REQUEST_SCHEMA = "https://schemas.alos.dev/v1/research/research-request.schema.json"
 RESEARCH_RESULT_SCHEMA = "https://schemas.alos.dev/v1/research/research-result.schema.json"
@@ -87,10 +90,12 @@ class ResearchEngine:
         contracts: CanonicalContractCatalog,
         model_gateway: ModelGateway,
         context_provider: ContextProvider | None = None,
+        orchestrator: ResearchOrchestrator | None = None,
     ) -> None:
         self._contracts = contracts
         self._model_gateway = model_gateway
         self._context_provider = context_provider
+        self._orchestrator = orchestrator
 
     async def research(self, payload: Mapping[str, Any]) -> dict[str, Any]:
         request = self._contracts.validate(RESEARCH_REQUEST_SCHEMA, payload)
@@ -111,6 +116,14 @@ class ResearchEngine:
             raise ResearchOutputInvalid("context_bundle must be an object")
         validated_context = self._contracts.validate(CONTEXT_BUNDLE_SCHEMA, context)
         self._validate_context_identity(validated_context, execution_context)
+        if self._orchestrator is not None:
+            from genesis.research.orchestration import evidence_items_from_context
+
+            analysis = await self._orchestrator.orchestrate(
+                request,
+                existing_evidence=evidence_items_from_context(validated_context),
+            )
+            return analysis.canonical_result
         evidence_by_id = {
             str(ref["evidence_id"]): ref for ref in validated_context.get("evidence_refs", [])
         }
