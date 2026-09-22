@@ -32,6 +32,12 @@ class StoppingPolicy:
         ),
         StopReason.MAX_STEPS: StopProjection("FAILED", "BLOCKED", "MAX_STEPS"),
         StopReason.MAX_TOOL_CALLS: StopProjection("FAILED", "BLOCKED", "MAX_TOOL_CALLS"),
+        StopReason.DELEGATION_DENIED: StopProjection(
+            "FAILED", "BLOCKED", "DELEGATION_DENIED"
+        ),
+        StopReason.DELEGATION_FAILED: StopProjection(
+            "FAILED", "NEEDS_REVIEW", "DELEGATION_FAILED"
+        ),
     }
 
     def project(self, reason: StopReason) -> StopProjection:

@@ -13,6 +13,16 @@ from genesis.agents.definitions import AgentDefinition
 from genesis.contracts import CanonicalContractCatalog, ContractValidationError
 from genesis.model_gateway.interfaces import ModelGateway
 from genesis.model_gateway.types import ModelRequest
+from genesis.orchestration.delegation import (
+    ChildResultInvalid,
+    ChildResultValidator,
+    DelegationAuthorizationSnapshot,
+    DelegationBoundaryClient,
+    DelegationDenied,
+    DelegationGuard,
+    DelegationPlanner,
+    DelegationPlanningError,
+)
 from genesis.runtime.agentic.boundary import (
     failure_result,
     parse_output,
@@ -73,6 +83,8 @@ class AgentRuntimeEngine:
         tool_client: ToolBoundaryClient,
         cancellation_probe: CancellationProbe | None = None,
         observer: RuntimeObserver | None = None,
+        delegation_client: DelegationBoundaryClient | None = None,
+        delegation_authorization: DelegationAuthorizationSnapshot | None = None,
     ) -> None:
         self._contracts = contracts
         self._planner = planner
@@ -80,6 +92,10 @@ class AgentRuntimeEngine:
         self._tool_client = tool_client
         self._cancellation = cancellation_probe or NeverCancelled()
         self._observer = observer or NullRuntimeObserver()
+        self._delegation_client = delegation_client
+        self._delegation_authorization = delegation_authorization
+        self._delegation_guard = DelegationGuard()
+        self._child_validator = ChildResultValidator(contracts)
 
     async def run(
         self,
@@ -163,7 +179,6 @@ class AgentRuntimeEngine:
             definition.input_schema, request["input"], "INPUT_SCHEMA_INVALID"
         )
         known_evidence_catalog = known_evidence(request)
-        planner_request = self._planner_request(definition, request, authorization)
         legacy_plan: ExecutionPlan | None = None
 
         while state.step_count < required_limit(budget.max_steps, "max_steps"):
@@ -177,6 +192,9 @@ class AgentRuntimeEngine:
                 )
             state = state.model_copy(update={"step_count": state.step_count + 1})
             self._safe_notify(self._observer.on_step_started, state)
+            planner_request = self._planner_request(
+                definition, request, authorization, state
+            )
             try:
                 decision, legacy_plan = await self._next_decision(
                     definition, planner_request, state, legacy_plan
@@ -232,6 +250,14 @@ class AgentRuntimeEngine:
                     state,
                     decision,
                     tool_results,
+                )
+                continue
+            if decision.kind is AgenticActionKind.DELEGATE:
+                state = await self._execute_delegation(
+                    request,
+                    state,
+                    decision,
+                    known_evidence_catalog,
                 )
                 continue
             if decision.kind is AgenticActionKind.FINISH:
@@ -422,6 +448,102 @@ class AgentRuntimeEngine:
             )
         return updated
 
+    async def _execute_delegation(
+        self,
+        request: dict[str, Any],
+        state: AgenticRuntimeState,
+        decision: AgenticDecision,
+        known_evidence_catalog: dict[str, dict[str, Any]],
+    ) -> AgenticRuntimeState:
+        snapshot = self._delegation_authorization
+        client = self._delegation_client
+        intent = decision.delegation_intent
+        if snapshot is None or client is None:
+            raise fail(
+                state,
+                "DELEGATION_NOT_AUTHORIZED",
+                "No Backend delegation authorization boundary is available.",
+                StopReason.DELEGATION_DENIED,
+            )
+        if intent is None and decision.delegation_proposal is not None:
+            proposal = decision.delegation_proposal
+            try:
+                intent = DelegationPlanner().plan(
+                    snapshot=snapshot,
+                    target_agent_id=proposal.target_agent_id,
+                    target_agent_version=proposal.target_agent_version,
+                    capability_id=proposal.target_capability_id,
+                    task=proposal.task,
+                    requested_authority=proposal.requested_authority,
+                )
+            except DelegationPlanningError as exc:
+                raise fail(
+                    state,
+                    "CHILD_TARGET_DENIED",
+                    "The proposed exact child target is not authorized.",
+                    StopReason.DELEGATION_DENIED,
+                ) from exc
+        if intent is None:
+            raise fail(
+                state,
+                "DELEGATION_INTENT_REQUIRED",
+                "A structured delegation proposal is required.",
+                StopReason.DELEGATION_DENIED,
+            )
+        try:
+            self._delegation_guard.validate(
+                snapshot,
+                intent,
+                submitted_keys=state.submitted_delegation_keys,
+                reserved_tokens=state.reserved_child_tokens + state.consumed_tokens,
+                reserved_cost=state.reserved_child_cost + state.estimated_cost,
+                child_count=len(state.child_observations),
+            )
+        except DelegationDenied as exc:
+            raise fail(
+                state,
+                exc.code,
+                "The delegation proposal exceeded the authorized parent envelope.",
+                StopReason.DELEGATION_DENIED,
+            ) from exc
+        await self._require_not_cancelled(state)
+        budget = intent.requested_authority.budget
+        submitted = state.model_copy(
+            update={
+                "submitted_delegation_keys": frozenset(
+                    (*state.submitted_delegation_keys, intent.delegation_key)
+                ),
+                "reserved_child_tokens": state.reserved_child_tokens
+                + (budget.max_tokens or 0),
+                "reserved_child_cost": state.reserved_child_cost + (budget.max_cost or 0),
+            }
+        )
+        try:
+            raw_result = await client.submit(intent, correlation_id=state.correlation_id)
+        except Exception:
+            observation = self._child_validator.invalid_observation(
+                intent, "CHILD_BOUNDARY_FAILED"
+            )
+            return submitted.model_copy(
+                update={"child_observations": (*submitted.child_observations, observation)}
+            )
+        await self._require_not_cancelled(submitted)
+        try:
+            observation = self._child_validator.validate(
+                raw_result,
+                intent=intent,
+                correlation_id=state.correlation_id,
+                parent_authority=snapshot.effective_parent_authority,
+            )
+        except ChildResultInvalid as exc:
+            observation = self._child_validator.invalid_observation(intent, exc.code)
+        if observation.validation_status == "VALID":
+            for evidence in observation.evidence_refs:
+                known_evidence_catalog[str(evidence["evidence_id"])] = evidence
+        return submitted.model_copy(
+            update={"child_observations": (*submitted.child_observations, observation)}
+        )
+
     async def _finish(
         self,
         definition: AgentDefinition,
@@ -593,15 +715,48 @@ class AgentRuntimeEngine:
         except Exception:
             return
 
-    @staticmethod
     def _planner_request(
+        self,
         definition: AgentDefinition,
         request: dict[str, Any],
         authorization: RuntimeAuthorization,
+        state: AgenticRuntimeState,
     ) -> dict[str, Any]:
         effective = sorted(
             set(cast(list[str], request.get("requested_tool_ids", [])))
             .intersection(definition.allowed_tool_ids)
             .intersection(authorization.allowed_tool_ids)
         )
-        return {**request, "requested_tool_ids": effective}
+        projection: dict[str, Any] = {**request, "requested_tool_ids": effective}
+        snapshot = self._delegation_authorization
+        if snapshot is not None and snapshot.enabled:
+            authority = snapshot.effective_parent_authority
+            projection["_delegation"] = {
+                "authorized_child_targets": [
+                    {
+                        "agent_id": item.agent_id,
+                        "agent_version": item.agent_version,
+                        "capability_ids": item.capability_ids,
+                        "research_domains": item.research_domains,
+                    }
+                    for item in snapshot.allowed_child_targets
+                ],
+                "parent_depth": snapshot.parent_depth,
+                "max_depth": snapshot.max_depth,
+                "remaining_child_capacity": max(
+                    0, snapshot.max_children - len(state.child_observations)
+                ),
+                "allowed_narrowing": {
+                    "permission_refs": sorted(authority.permission_refs),
+                    "scope_refs": sorted(authority.scope_refs),
+                    "allowed_tool_ids": sorted(authority.allowed_tool_ids),
+                    "data_classification": authority.data_classification,
+                },
+                "parent_budget": snapshot.parent_budget.model_dump(mode="json"),
+                "research_constraints": (
+                    snapshot.research_constraints.model_dump(mode="json")
+                    if snapshot.research_constraints is not None
+                    else None
+                ),
+            }
+        return projection

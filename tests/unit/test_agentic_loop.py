@@ -11,6 +11,15 @@ import pytest
 from genesis.agents.definitions import AgentDefinition
 from genesis.contracts import CanonicalContractCatalog
 from genesis.model_gateway.types import ModelRequest, ModelResponse
+from genesis.orchestration.delegation import (
+    AuthorityEnvelope,
+    AuthorizedChildTarget,
+    ChildAuthorityRequest,
+    ChildTaskSpec,
+    DelegationAuthorizationSnapshot,
+    DelegationIntent,
+    DelegationPlanner,
+)
 from genesis.runtime.agentic import (
     AgenticActionKind,
     AgenticDecision,
@@ -23,6 +32,7 @@ from genesis.runtime.agentic import (
     ToolCallIntent,
 )
 from genesis.runtime.agentic.state import known_evidence
+from genesis.runtime.context import DataClassification
 
 CONTRACTS_ROOT = Path(__file__).resolve().parents[3] / "alos-contracts"
 
@@ -150,6 +160,22 @@ class FakeToolClient:
                 "retryable": status in {"FAILED", "TIMEOUT"},
             }
         result.update(self.mutate)
+        return result
+
+
+class FakeDelegationClient:
+    def __init__(self, results: Sequence[dict[str, Any] | Exception]) -> None:
+        self.results = list(results)
+        self.intents: list[DelegationIntent] = []
+
+    async def submit(
+        self, intent: DelegationIntent, *, correlation_id: str
+    ) -> dict[str, Any]:
+        assert correlation_id == "corr_h5_runtime_001"
+        self.intents.append(intent)
+        result = self.results.pop(0)
+        if isinstance(result, Exception):
+            raise result
         return result
 
 
@@ -344,6 +370,8 @@ def engine(
     tool_client: FakeToolClient | None = None,
     cancellation: SequenceCancellation | None = None,
     observer: TraceObserver | None = None,
+    delegation_client: FakeDelegationClient | None = None,
+    delegation_authorization: DelegationAuthorizationSnapshot | None = None,
 ) -> tuple[AgentRuntimeEngine, FakeGateway, FakeToolClient]:
     model = gateway or FakeGateway()
     tools = tool_client or FakeToolClient(("SUCCESS", "SUCCESS", "SUCCESS"))
@@ -355,6 +383,8 @@ def engine(
             tool_client=tools,
             cancellation_probe=cancellation,
             observer=observer,
+            delegation_client=delegation_client,
+            delegation_authorization=delegation_authorization,
         ),
         model,
         tools,
@@ -963,3 +993,319 @@ async def test_excluded_evidence_cannot_be_fabricated_into_result() -> None:
     result = await runtime.run(definition(), request, authorization())
     assert result["error"]["code"] == "EVIDENCE_INSUFFICIENT"
     assert result["evidence_refs"] == []
+
+
+def delegation_snapshot() -> DelegationAuthorizationSnapshot:
+    return DelegationAuthorizationSnapshot(
+        enabled=True,
+        parent_run_id="run_h5_runtime_001",
+        root_run_id="run_h5_runtime_001",
+        parent_agent_id="agent_h5_runtime_001",
+        parent_agent_version="1.0.0",
+        parent_depth=0,
+        ancestry_agent_refs=(),
+        allowed_child_targets=(
+            AuthorizedChildTarget(
+                agent_id="agent_child_h6_001",
+                agent_version="1.0.0",
+                capability_ids=("capability_child_h6",),
+            ),
+        ),
+        max_depth=2,
+        max_children=2,
+        effective_parent_authority=AuthorityEnvelope(
+            tenant_id="tenant_h5_001",
+            organization_id="organization_h5_001",
+            workspace_id="workspace_h5_001",
+            permission_refs=frozenset({"tools.diagnostic.execute"}),
+            scope_refs=frozenset({"scope.h5"}),
+            allowed_tool_ids=frozenset({"diagnostic.echo", "diagnostic.second"}),
+            data_classification=DataClassification.INTERNAL,
+        ),
+        parent_budget={
+            "max_tokens": 100,
+            "max_cost": 2,
+            "max_steps": 5,
+            "max_tool_calls": 4,
+            "max_children": 2,
+            "max_depth": 2,
+            "timeout_seconds": 5,
+        },
+    )
+
+
+def delegation_intent(*, task_id: str = "child_task_h6_001") -> DelegationIntent:
+    snapshot = delegation_snapshot()
+    return DelegationPlanner().plan(
+        snapshot=snapshot,
+        target_agent_id="agent_child_h6_001",
+        target_agent_version="1.0.0",
+        capability_id="capability_child_h6",
+        task=ChildTaskSpec(
+            child_task_id=task_id,
+            goal="Produce a bounded child summary.",
+            input={"message": "child work"},
+            expected_result_schema={
+                "type": "object",
+                "required": ["summary"],
+                "properties": {"summary": {"type": "string"}},
+                "additionalProperties": False,
+            },
+        ),
+        requested_authority=ChildAuthorityRequest(
+            authority=snapshot.effective_parent_authority.model_copy(
+                update={"allowed_tool_ids": frozenset({"diagnostic.echo"})}
+            ),
+            budget={
+                "max_tokens": 40,
+                "max_cost": 0.5,
+                "max_steps": 2,
+                "max_tool_calls": 1,
+                "max_children": 1,
+                "max_depth": 1,
+                "timeout_seconds": 3,
+            },
+        ),
+    )
+
+
+def delegate_decision(*, task_id: str = "child_task_h6_001") -> AgenticDecision:
+    return AgenticDecision(
+        kind=AgenticActionKind.DELEGATE,
+        delegation_intent=delegation_intent(task_id=task_id),
+    )
+
+
+def canonical_child_result(**changes: Any) -> dict[str, Any]:
+    value: dict[str, Any] = {
+        "run_id": "run_child_h6_001",
+        "root_run_id": "run_h5_runtime_001",
+        "parent_run_id": "run_h5_runtime_001",
+        "correlation_id": "corr_h5_runtime_001",
+        "agent_id": "agent_child_h6_001",
+        "agent_version": "1.0.0",
+        "capability_id": "capability_child_h6",
+        "status": "COMPLETED",
+        "output_state": "AI_INFERRED",
+        "output": {"summary": "child complete"},
+        "usage": {"input_tokens": 4, "output_tokens": 2},
+        "evidence_refs": [],
+        "tool_results": [],
+        "started_at": "2026-09-22T10:00:00Z",
+        "completed_at": "2026-09-22T10:01:00Z",
+    }
+    value.update(changes)
+    return value
+
+
+@pytest.mark.asyncio
+async def test_delegate_boundary_result_becomes_bounded_parent_observation() -> None:
+    planner = QueuePlanner(
+        (delegate_decision(), finish({"summary": "parent used child"}))
+    )
+    delegation = FakeDelegationClient((canonical_child_result(),))
+    runtime, _, _ = engine(
+        planner,
+        delegation_client=delegation,
+        delegation_authorization=delegation_snapshot(),
+    )
+    result = await runtime.run(definition(), run_request(), authorization())
+    assert result["status"] == "COMPLETED"
+    assert len(delegation.intents) == 1
+    observation = planner.states[1].child_observations[0]
+    assert observation.validation_status == "VALID"
+    assert observation.output == {"summary": "child complete"}
+    assert result["usage"]["input_tokens"] == 0
+
+
+@pytest.mark.asyncio
+async def test_delegate_without_authorization_fails_closed() -> None:
+    runtime, _, _ = engine(QueuePlanner((delegate_decision(),)))
+    result = await runtime.run(definition(), run_request(), authorization())
+    assert result["error"]["code"] == "DELEGATION_NOT_AUTHORIZED"
+
+
+@pytest.mark.asyncio
+async def test_duplicate_delegation_stops_before_second_boundary_call() -> None:
+    repeated = delegate_decision()
+    planner = QueuePlanner((repeated, repeated))
+    delegation = FakeDelegationClient((canonical_child_result(), canonical_child_result()))
+    runtime, _, _ = engine(
+        planner,
+        delegation_client=delegation,
+        delegation_authorization=delegation_snapshot(),
+    )
+    result = await runtime.run(definition(), run_request(), authorization())
+    assert result["error"]["code"] == "DUPLICATE_DELEGATION"
+    assert len(delegation.intents) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "child_payload",
+    (
+        {"malformed": True},
+        canonical_child_result(root_run_id="run_wrong"),
+        canonical_child_result(output={"wrong": True}),
+    ),
+)
+async def test_invalid_child_result_is_labeled_and_parent_can_continue(
+    child_payload: dict[str, Any],
+) -> None:
+    planner = QueuePlanner(
+        (delegate_decision(), finish({"summary": "needs review"}))
+    )
+    delegation = FakeDelegationClient((child_payload,))
+    runtime, _, _ = engine(
+        planner,
+        delegation_client=delegation,
+        delegation_authorization=delegation_snapshot(),
+    )
+    result = await runtime.run(definition(), run_request(), authorization())
+    assert result["status"] == "COMPLETED"
+    assert planner.states[1].child_observations[0].validation_status == "INVALID"
+    assert len(delegation.intents) == 1
+
+
+@pytest.mark.asyncio
+async def test_child_failure_is_observed_without_retry_or_parent_usage_folding() -> None:
+    failed = canonical_child_result(
+        status="FAILED",
+        output_state="BLOCKED",
+        output=None,
+        error={
+            "code": "CHILD_FAILED",
+            "message": "child failed safely",
+            "correlation_id": "corr_h5_runtime_001",
+            "retryable": False,
+        },
+    )
+    failed.pop("output")
+    planner = QueuePlanner((delegate_decision(), finish({"summary": "partial"})))
+    delegation = FakeDelegationClient((failed,))
+    runtime, _, _ = engine(
+        planner,
+        delegation_client=delegation,
+        delegation_authorization=delegation_snapshot(),
+    )
+    result = await runtime.run(definition(), run_request(), authorization())
+    assert result["status"] == "COMPLETED"
+    assert planner.states[1].child_observations[0].status == "FAILED"
+    assert result["usage"]["input_tokens"] == 0
+    assert len(delegation.intents) == 1
+
+
+@pytest.mark.asyncio
+async def test_valid_child_evidence_is_available_without_lineage_rewrite() -> None:
+    child_evidence = evidence_ref()
+    planner = QueuePlanner(
+        (
+            delegate_decision(),
+            finish(
+                {"summary": "evidence retained"},
+                evidence_ids=("evidence_h5_001",),
+                requires_evidence=True,
+            ),
+        )
+    )
+    delegation = FakeDelegationClient(
+        (canonical_child_result(evidence_refs=[child_evidence]),)
+    )
+    runtime, _, _ = engine(
+        planner,
+        delegation_client=delegation,
+        delegation_authorization=delegation_snapshot(),
+    )
+    result = await runtime.run(definition(), run_request(), authorization())
+    assert result["status"] == "COMPLETED"
+    assert result["evidence_refs"][0]["run_id"] == "run_origin_001"
+    assert result["evidence_refs"][0]["correlation_id"] == "corr_origin_001"
+
+
+@pytest.mark.asyncio
+async def test_model_planner_exposes_delegate_only_with_authorized_targets() -> None:
+    without_gateway = SequenceGateway(
+        (
+            planner_response(
+                {"kind": "FINISH", "output": {"summary": "no delegation"}},
+                input_tokens=1,
+                output_tokens=1,
+                cost=0,
+            ),
+        )
+    )
+    without_runtime, _, _ = engine(
+        ModelGatewayAgenticPlanner(model_gateway=without_gateway),
+        gateway=without_gateway,  # type: ignore[arg-type]
+    )
+    await without_runtime.run(definition(), run_request(), authorization())
+    assert "DELEGATE" not in without_gateway.requests[0].messages[0]["content"]
+
+    with_gateway = SequenceGateway(
+        (
+            planner_response(
+                {"kind": "FINISH", "output": {"summary": "delegation available"}},
+                input_tokens=1,
+                output_tokens=1,
+                cost=0,
+            ),
+        )
+    )
+    with_runtime, _, _ = engine(
+        ModelGatewayAgenticPlanner(model_gateway=with_gateway),
+        gateway=with_gateway,  # type: ignore[arg-type]
+        delegation_client=FakeDelegationClient((canonical_child_result(),)),
+        delegation_authorization=delegation_snapshot(),
+    )
+    await with_runtime.run(definition(), run_request(), authorization())
+    assert "DELEGATE" in with_gateway.requests[0].messages[0]["content"]
+    operational = json.loads(with_gateway.requests[0].messages[1]["content"])
+    target = operational["delegation"]["authorized_child_targets"][0]
+    assert target == {
+        "agent_id": "agent_child_h6_001",
+        "agent_version": "1.0.0",
+        "capability_ids": ["capability_child_h6"],
+        "research_domains": [],
+    }
+
+
+@pytest.mark.asyncio
+async def test_model_planner_proposal_derives_runtime_owned_lineage_and_key() -> None:
+    planned = delegation_intent()
+    proposal = {
+        "target_agent_id": planned.target_agent_id,
+        "target_agent_version": planned.target_agent_version,
+        "target_capability_id": planned.target_capability_id,
+        "task": planned.task.model_dump(mode="json"),
+        "requested_authority": planned.requested_authority.model_dump(mode="json"),
+    }
+    gateway = SequenceGateway(
+        (
+            planner_response(
+                {"kind": "DELEGATE", "delegation_proposal": proposal},
+                input_tokens=2,
+                output_tokens=2,
+                cost=0.1,
+            ),
+            planner_response(
+                {"kind": "FINISH", "output": {"summary": "model delegated"}},
+                input_tokens=2,
+                output_tokens=1,
+                cost=0.1,
+            ),
+        )
+    )
+    delegation = FakeDelegationClient((canonical_child_result(),))
+    runtime, _, _ = engine(
+        ModelGatewayAgenticPlanner(model_gateway=gateway),
+        gateway=gateway,  # type: ignore[arg-type]
+        delegation_client=delegation,
+        delegation_authorization=delegation_snapshot(),
+    )
+    result = await runtime.run(definition(), run_request(), authorization())
+    assert result["status"] == "COMPLETED"
+    assert len(delegation.intents) == 1
+    submitted = delegation.intents[0]
+    assert submitted.parent_run_id == "run_h5_runtime_001"
+    assert submitted.root_run_id == "run_h5_runtime_001"
+    assert submitted.delegation_key == planned.delegation_key

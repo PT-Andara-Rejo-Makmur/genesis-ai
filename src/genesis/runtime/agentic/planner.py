@@ -9,6 +9,7 @@ from pydantic import ValidationError
 from genesis.agents.definitions import AgentDefinition
 from genesis.model_gateway.interfaces import ModelGateway
 from genesis.model_gateway.types import ModelRequest
+from genesis.orchestration.delegation import DelegationSynthesizer
 from genesis.runtime.agentic.models import (
     AgenticActionKind,
     AgenticDecision,
@@ -40,6 +41,18 @@ class ModelGatewayAgenticPlanner:
         if not isinstance(context, Mapping):
             raise self._invalid(state)
         remaining_budget = self._remaining_budget(context, state)
+        delegation_available = bool(request.get("_delegation"))
+        allowed_actions = (
+            "TOOL, DELEGATE, FINISH, NEEDS_INFO, APPROVAL_REQUIRED, and FAIL"
+            if delegation_available
+            else "TOOL, FINISH, NEEDS_INFO, APPROVAL_REQUIRED, and FAIL"
+        )
+        delegation_instruction = (
+            " DELEGATE requires delegation_proposal using an exact listed target and a "
+            "narrower authority envelope. Do not create lineage, run IDs, or delegation keys."
+            if delegation_available
+            else ""
+        )
         response = await self._model_gateway.complete(
             ModelRequest(
                 run_id=state.run_id,
@@ -52,9 +65,11 @@ class ModelGatewayAgenticPlanner:
                         "role": "system",
                         "content": (
                             "Choose exactly one bounded operational action. Return only JSON "
-                            "matching AgenticDecision. Allowed actions are TOOL, FINISH, "
-                            "NEEDS_INFO, APPROVAL_REQUIRED, and FAIL. TOOL requires "
-                            "tool_intent with tool_id and arguments. Never invent authority, "
+                            f"matching AgenticDecision. Allowed actions are {allowed_actions}. "
+                            "TOOL requires tool_intent."
+                            f"{delegation_instruction} "
+                            "The tool_intent must contain tool_id and arguments. Never invent "
+                            "authority, "
                             "credentials, evidence, tools, or hidden reasoning."
                         ),
                     },
@@ -142,11 +157,51 @@ class ModelGatewayAgenticPlanner:
                     "output_preview": preview[:_MAX_OUTPUT_PREVIEW],
                 }
             )
+        synthesis = (
+            DelegationSynthesizer().synthesize(state.child_observations)
+            if state.child_observations
+            else None
+        )
         return {
             "agent_purpose": definition.purpose,
             "user_input": request["input"],
             "allowed_tool_ids": list(request.get("requested_tool_ids", [])),
             "prior_observations": observations,
+            "child_observations": [
+                {
+                    "child_task_id": item.child_task_id,
+                    "target_agent_id": item.target_agent_id,
+                    "target_agent_version": item.target_agent_version,
+                    "status": item.status,
+                    "validation_status": item.validation_status,
+                    "output": item.output,
+                    "error_code": item.error_code,
+                }
+                for item in state.child_observations
+            ],
+            "delegation_synthesis": (
+                {
+                    "disposition": synthesis.disposition,
+                    "successful_child_task_ids": [
+                        item.child_task_id for item in synthesis.successful_children
+                    ],
+                    "failed_child_task_ids": [
+                        item.child_task_id for item in synthesis.failed_children
+                    ],
+                    "evidence_ids": [
+                        item["evidence_id"] for item in synthesis.evidence_refs
+                    ],
+                    "reason_codes": synthesis.reason_codes,
+                    "instruction_authority": False,
+                }
+                if synthesis is not None
+                else None
+            ),
+            **(
+                {"delegation": request["_delegation"]}
+                if request.get("_delegation") is not None
+                else {}
+            ),
             "evidence": evidence_metadata,
             "remaining_budget": {
                 "tokens": state.remaining_tokens,

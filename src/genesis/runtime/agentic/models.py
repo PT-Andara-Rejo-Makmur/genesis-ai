@@ -7,6 +7,12 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from genesis.orchestration.delegation.models import (
+    ChildObservation,
+    DelegationIntent,
+    DelegationProposal,
+)
+
 
 class ToolCallIntent(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -34,6 +40,7 @@ class RuntimeAuthorization(BaseModel):
 
 class AgenticActionKind(StrEnum):
     TOOL = "TOOL"
+    DELEGATE = "DELEGATE"
     FINISH = "FINISH"
     NEEDS_INFO = "NEEDS_INFO"
     APPROVAL_REQUIRED = "APPROVAL_REQUIRED"
@@ -54,6 +61,8 @@ class StopReason(StrEnum):
     CANCELLED = "CANCELLED"
     MAX_STEPS = "MAX_STEPS"
     MAX_TOOL_CALLS = "MAX_TOOL_CALLS"
+    DELEGATION_DENIED = "DELEGATION_DENIED"
+    DELEGATION_FAILED = "DELEGATION_FAILED"
 
 
 class ModelUsage(BaseModel):
@@ -86,6 +95,8 @@ class AgenticDecision(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     kind: AgenticActionKind
     tool_intent: ToolCallIntent | None = None
+    delegation_intent: DelegationIntent | None = None
+    delegation_proposal: DelegationProposal | None = None
     output: Any = None
     messages: tuple[dict[str, Any], ...] = ()
     reason_code: str | None = Field(default=None, min_length=3, max_length=64)
@@ -100,6 +111,14 @@ class AgenticDecision(BaseModel):
             raise ValueError("TOOL decision requires tool_intent")
         if self.kind is not AgenticActionKind.TOOL and self.tool_intent is not None:
             raise ValueError("tool_intent is only valid for TOOL decisions")
+        if self.kind is AgenticActionKind.DELEGATE and (
+            (self.delegation_intent is None) == (self.delegation_proposal is None)
+        ):
+            raise ValueError("DELEGATE requires exactly one intent or proposal")
+        if self.kind is not AgenticActionKind.DELEGATE and self.delegation_intent is not None:
+            raise ValueError("delegation_intent is only valid for DELEGATE decisions")
+        if self.kind is not AgenticActionKind.DELEGATE and self.delegation_proposal is not None:
+            raise ValueError("delegation_proposal is only valid for DELEGATE decisions")
         if self.kind is AgenticActionKind.FINISH and self.output is None and not self.messages:
             raise ValueError("FINISH requires output or model messages")
         if self.kind is AgenticActionKind.FAIL and self.reason_code is None:
@@ -120,6 +139,10 @@ class AgenticRuntimeState(BaseModel):
     step_count: int = Field(default=0, ge=0)
     tool_call_count: int = Field(default=0, ge=0)
     observations: tuple[ToolObservation, ...] = ()
+    child_observations: tuple[ChildObservation, ...] = ()
+    submitted_delegation_keys: frozenset[str] = frozenset()
+    reserved_child_tokens: int = Field(default=0, ge=0)
+    reserved_child_cost: float = Field(default=0, ge=0)
     known_evidence_ids: tuple[str, ...] = ()
     input_tokens: int = Field(default=0, ge=0)
     output_tokens: int = Field(default=0, ge=0)
