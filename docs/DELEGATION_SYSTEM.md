@@ -42,7 +42,9 @@ or evidence.
 - There is no automatic retry and no authoritative cancellation propagation in GENESIS.
 - Child usage is retained on the child observation and is not folded into parent canonical usage.
 - Parent-consumed model usage and already reserved child allocations jointly constrain each new
-  child reservation without folding child provider identity into parent usage.
+  child reservation and every later parent planner/final-synthesis request. Remaining parent
+  token and cost projections subtract both consumed parent usage and conservative child
+  reservations, without folding child provider identity or actual child usage into parent usage.
 - `DELEGATE` is shown to the planner only while a coherent snapshot, exact child target, depth,
   child count, local concurrency preflight, and token/cost capacity remain feasible. The guard
   repeats the checks before every boundary call.

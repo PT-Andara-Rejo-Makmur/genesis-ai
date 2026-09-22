@@ -1041,7 +1041,12 @@ def delegation_snapshot() -> DelegationAuthorizationSnapshot:
     )
 
 
-def delegation_intent(*, task_id: str = "child_task_h6_001") -> DelegationIntent:
+def delegation_intent(
+    *,
+    task_id: str = "child_task_h6_001",
+    max_tokens: int = 40,
+    max_cost: float = 0.5,
+) -> DelegationIntent:
     snapshot = delegation_snapshot()
     return DelegationPlanner().plan(
         snapshot=snapshot,
@@ -1064,8 +1069,8 @@ def delegation_intent(*, task_id: str = "child_task_h6_001") -> DelegationIntent
                 update={"allowed_tool_ids": frozenset({"diagnostic.echo"})}
             ),
             budget={
-                "max_tokens": 40,
-                "max_cost": 0.5,
+                "max_tokens": max_tokens,
+                "max_cost": max_cost,
                 "max_steps": 2,
                 "max_tool_calls": 1,
                 "max_children": 1,
@@ -1077,11 +1082,33 @@ def delegation_intent(*, task_id: str = "child_task_h6_001") -> DelegationIntent
     )
 
 
-def delegate_decision(*, task_id: str = "child_task_h6_001") -> AgenticDecision:
+def delegate_decision(
+    *,
+    task_id: str = "child_task_h6_001",
+    max_tokens: int = 40,
+    max_cost: float = 0.5,
+) -> AgenticDecision:
     return AgenticDecision(
         kind=AgenticActionKind.DELEGATE,
-        delegation_intent=delegation_intent(task_id=task_id),
+        delegation_intent=delegation_intent(
+            task_id=task_id,
+            max_tokens=max_tokens,
+            max_cost=max_cost,
+        ),
     )
+
+
+def delegation_proposal(
+    *, max_tokens: int = 40, max_cost: float = 0.5
+) -> dict[str, Any]:
+    planned = delegation_intent(max_tokens=max_tokens, max_cost=max_cost)
+    return {
+        "target_agent_id": planned.target_agent_id,
+        "target_agent_version": planned.target_agent_version,
+        "target_capability_id": planned.target_capability_id,
+        "task": planned.task.model_dump(mode="json"),
+        "requested_authority": planned.requested_authority.model_dump(mode="json"),
+    }
 
 
 def canonical_child_result(**changes: Any) -> dict[str, Any]:
@@ -1497,6 +1524,183 @@ async def test_child_reservations_and_parent_usage_are_not_double_counted() -> N
     assert len(delegation.intents) == 2
     assert planner.states[-1].reserved_child_tokens == 80
     assert planner.states[-1].consumed_tokens == 10
+    assert planner.states[-1].remaining_tokens == 10
+    assert planner.states[-1].remaining_cost == pytest.approx(0.9)
+
+
+@pytest.mark.asyncio
+async def test_parent_planner_budget_subtracts_child_reservations() -> None:
+    gateway = SequenceGateway(
+        (
+            planner_response(
+                {
+                    "kind": "DELEGATE",
+                    "delegation_proposal": delegation_proposal(
+                        max_tokens=80, max_cost=1.2
+                    ),
+                },
+                input_tokens=6,
+                output_tokens=4,
+                cost=0.5,
+            ),
+            planner_response(
+                {"kind": "FINISH", "output": {"summary": "tree bounded"}},
+                input_tokens=1,
+                output_tokens=1,
+                cost=0.1,
+            ),
+        )
+    )
+    runtime, _, _ = engine(
+        ModelGatewayAgenticPlanner(model_gateway=gateway),
+        gateway=gateway,  # type: ignore[arg-type]
+        delegation_client=FakeDelegationClient((canonical_child_result(),)),
+        delegation_authorization=delegation_snapshot(),
+    )
+    result = await runtime.run(definition(), run_request(), authorization())
+    assert result["status"] == "COMPLETED"
+    assert gateway.requests[1].requested_max_tokens == 10
+    assert gateway.requests[1].budget.max_tokens == 10
+    assert gateway.requests[1].budget.max_cost == pytest.approx(0.3)
+    operational = json.loads(gateway.requests[1].messages[1]["content"])
+    assert operational["remaining_budget"] == {
+        "tokens": 10,
+        "cost": pytest.approx(0.3),
+    }
+
+
+@pytest.mark.asyncio
+async def test_final_synthesis_budget_subtracts_child_reservations() -> None:
+    delegated = delegate_decision(max_tokens=80, max_cost=1.2).model_copy(
+        update={
+            "planner_usage": ModelUsage(
+                input_tokens=6,
+                output_tokens=4,
+                estimated_cost=0.5,
+            )
+        }
+    )
+    planner = QueuePlanner(
+        (
+            delegated,
+            AgenticDecision(
+                kind=AgenticActionKind.FINISH,
+                messages=({"role": "user", "content": "synthesize"},),
+            ),
+        )
+    )
+    gateway = FakeGateway(
+        ModelResponse(
+            content=json.dumps({"summary": "bounded synthesis"}),
+            route_id="route.final",
+            input_tokens=1,
+            output_tokens=1,
+            cost=0.1,
+        )
+    )
+    runtime, _, _ = engine(
+        planner,
+        gateway=gateway,
+        delegation_client=FakeDelegationClient((canonical_child_result(),)),
+        delegation_authorization=delegation_snapshot(),
+    )
+    result = await runtime.run(definition(), run_request(), authorization())
+    assert result["status"] == "COMPLETED"
+    assert planner.states[1].remaining_tokens == 10
+    assert planner.states[1].remaining_cost == pytest.approx(0.3)
+    assert gateway.requests[0].requested_max_tokens == 10
+    assert gateway.requests[0].budget.max_tokens == 10
+    assert gateway.requests[0].budget.max_cost == pytest.approx(0.3)
+
+
+@pytest.mark.asyncio
+async def test_parent_model_cannot_spend_reserved_child_tokens() -> None:
+    gateway = SequenceGateway(
+        (
+            planner_response(
+                {
+                    "kind": "DELEGATE",
+                    "delegation_proposal": delegation_proposal(max_tokens=80),
+                },
+                input_tokens=6,
+                output_tokens=4,
+                cost=0,
+            ),
+            planner_response(
+                {"kind": "FINISH", "output": {"summary": "overspent"}},
+                input_tokens=6,
+                output_tokens=5,
+                cost=0,
+            ),
+        )
+    )
+    runtime, _, _ = engine(
+        ModelGatewayAgenticPlanner(model_gateway=gateway),
+        gateway=gateway,  # type: ignore[arg-type]
+        delegation_client=FakeDelegationClient((canonical_child_result(),)),
+        delegation_authorization=delegation_snapshot(),
+    )
+    result = await runtime.run(definition(), run_request(), authorization())
+    assert gateway.requests[1].requested_max_tokens == 10
+    assert result["error"]["code"] == "BUDGET_TOKENS_EXCEEDED"
+
+
+@pytest.mark.asyncio
+async def test_parent_model_cannot_spend_reserved_child_cost() -> None:
+    gateway = SequenceGateway(
+        (
+            planner_response(
+                {
+                    "kind": "DELEGATE",
+                    "delegation_proposal": delegation_proposal(max_cost=1.2),
+                },
+                input_tokens=1,
+                output_tokens=1,
+                cost=0.5,
+            ),
+            planner_response(
+                {"kind": "FINISH", "output": {"summary": "overspent"}},
+                input_tokens=1,
+                output_tokens=1,
+                cost=0.31,
+            ),
+        )
+    )
+    runtime, _, _ = engine(
+        ModelGatewayAgenticPlanner(model_gateway=gateway),
+        gateway=gateway,  # type: ignore[arg-type]
+        delegation_client=FakeDelegationClient((canonical_child_result(),)),
+        delegation_authorization=delegation_snapshot(),
+    )
+    result = await runtime.run(definition(), run_request(), authorization())
+    assert gateway.requests[1].budget.max_cost == pytest.approx(0.3)
+    assert result["error"]["code"] == "BUDGET_COST_EXCEEDED"
+
+
+@pytest.mark.asyncio
+async def test_full_tree_token_reservation_stops_before_next_model_call() -> None:
+    gateway = SequenceGateway(
+        (
+            planner_response(
+                {
+                    "kind": "DELEGATE",
+                    "delegation_proposal": delegation_proposal(max_tokens=90),
+                },
+                input_tokens=6,
+                output_tokens=4,
+                cost=0,
+            ),
+        )
+    )
+    runtime, _, _ = engine(
+        ModelGatewayAgenticPlanner(model_gateway=gateway),
+        gateway=gateway,  # type: ignore[arg-type]
+        delegation_client=FakeDelegationClient((canonical_child_result(),)),
+        delegation_authorization=delegation_snapshot(),
+    )
+    result = await runtime.run(definition(), run_request(), authorization())
+    assert result["error"]["code"] == "BUDGET_TOKENS_EXHAUSTED"
+    assert len(gateway.requests) == 1
 
 
 @pytest.mark.asyncio

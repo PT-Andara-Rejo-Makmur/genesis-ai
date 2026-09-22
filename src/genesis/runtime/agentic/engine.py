@@ -606,6 +606,12 @@ class AgentRuntimeEngine:
                     }
                 )
             context = cast(dict[str, Any], request["execution_context"])
+            remaining_budget = budget.model_copy(
+                update={
+                    "max_tokens": state.remaining_tokens,
+                    "max_cost": state.remaining_cost,
+                }
+            )
             try:
                 response = await self._model_gateway.complete(
                     ModelRequest(
@@ -616,7 +622,7 @@ class AgentRuntimeEngine:
                         data_classification=context["data_classification"],
                         messages=tuple(messages),
                         requested_max_tokens=state.remaining_tokens,
-                        budget=budget,
+                        budget=remaining_budget,
                     )
                 )
             except Exception as exc:

@@ -157,7 +157,19 @@ class AgenticRuntimeState(BaseModel):
 
     @property
     def remaining_tokens(self) -> int:
-        return max(0, self.max_tokens - self.consumed_tokens)
+        return max(
+            0,
+            self.max_tokens - self.consumed_tokens - self.reserved_child_tokens,
+        )
+
+    @property
+    def remaining_cost(self) -> float | None:
+        if self.max_cost is None:
+            return None
+        return max(
+            0.0,
+            self.max_cost - self.estimated_cost - self.reserved_child_cost,
+        )
 
 
 class RuntimeFailure(Exception):

@@ -112,13 +112,8 @@ class ModelGatewayAgenticPlanner:
         if not isinstance(raw, Mapping):
             raise RuntimeFailure("BUDGET_REQUIRED", "Execution budget is required.")
         budget = ExecutionBudget.model_validate(dict(raw))
-        remaining_cost = (
-            max(0.0, state.max_cost - state.estimated_cost)
-            if state.max_cost is not None
-            else None
-        )
         return budget.model_copy(
-            update={"max_tokens": state.remaining_tokens, "max_cost": remaining_cost}
+            update={"max_tokens": state.remaining_tokens, "max_cost": state.remaining_cost}
         )
 
     @staticmethod
@@ -209,11 +204,7 @@ class ModelGatewayAgenticPlanner:
             "evidence": evidence_metadata,
             "remaining_budget": {
                 "tokens": state.remaining_tokens,
-                "cost": (
-                    max(0.0, state.max_cost - state.estimated_cost)
-                    if state.max_cost is not None
-                    else None
-                ),
+                "cost": state.remaining_cost,
             },
             "output_schema": definition.output_schema,
         }

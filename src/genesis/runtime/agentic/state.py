@@ -161,17 +161,20 @@ def account_model_response(
 
 
 def enforce_cumulative_budget(state: AgenticRuntimeState) -> None:
-    if state.consumed_tokens > state.max_tokens:
+    if state.consumed_tokens + state.reserved_child_tokens > state.max_tokens:
         raise fail(
             state,
             "BUDGET_TOKENS_EXCEEDED",
-            "Cumulative model usage exceeded the authorized token budget.",
+            "Parent model usage and child reservations exceeded the token budget.",
             StopReason.BUDGET_EXHAUSTED,
         )
-    if state.max_cost is not None and state.estimated_cost > state.max_cost:
+    if (
+        state.max_cost is not None
+        and state.estimated_cost + state.reserved_child_cost > state.max_cost
+    ):
         raise fail(
             state,
             "BUDGET_COST_EXCEEDED",
-            "Cumulative model usage exceeded the authorized cost budget.",
+            "Parent model usage and child reservations exceeded the cost budget.",
             StopReason.BUDGET_EXHAUSTED,
         )
