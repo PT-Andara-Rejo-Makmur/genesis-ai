@@ -27,6 +27,7 @@ class AgentDefinition(BaseModel):
     allowed_tool_ids: tuple[str, ...] = ()
     permission_refs: tuple[str, ...] = ()
     scope_refs: tuple[str, ...] = Field(min_length=1)
+    approval_required: bool = False
     model_policy_ref: str = Field(min_length=1)
     input_schema: dict[str, Any] = Field(default_factory=lambda: {"type": "object"})
     output_schema: dict[str, Any] = Field(default_factory=lambda: {"type": "object"})

@@ -5,7 +5,12 @@ from collections.abc import Mapping
 from typing import Any
 
 from genesis.agents.definitions import AgentDefinition
-from genesis.runtime.agentic.models import ExecutionPlan
+from genesis.runtime.agentic.models import (
+    AgenticActionKind,
+    AgenticDecision,
+    AgenticRuntimeState,
+    ExecutionPlan,
+)
 
 
 class SinglePassPlanner:
@@ -26,3 +31,13 @@ class SinglePassPlanner:
                 },
             )
         )
+
+    async def next_action(
+        self,
+        definition: AgentDefinition,
+        request: Mapping[str, Any],
+        state: AgenticRuntimeState,
+    ) -> AgenticDecision:
+        del state
+        plan = await self.plan(definition, request)
+        return AgenticDecision(kind=AgenticActionKind.FINISH, messages=plan.messages)

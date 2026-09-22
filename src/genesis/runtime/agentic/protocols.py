@@ -1,18 +1,37 @@
-"""Ports used by AgentRuntimeEngine; framework adapters implement these elsewhere."""
+"""Ports used by AgentRuntimeEngine; adapters implement authority elsewhere."""
 
 from collections.abc import Mapping
-from typing import Any, Protocol
+from typing import Any, Protocol, runtime_checkable
 
 from genesis.agents.definitions import AgentDefinition
-from genesis.runtime.agentic.models import ExecutionPlan
+from genesis.runtime.agentic.models import (
+    AgenticDecision,
+    AgenticRuntimeState,
+    ExecutionPlan,
+    StopReason,
+)
 
 
 class RuntimePlanner(Protocol):
+    """Legacy planner contract retained during the H5 migration."""
+
     async def plan(
         self,
         definition: AgentDefinition,
         request: Mapping[str, Any],
     ) -> ExecutionPlan: ...
+
+
+@runtime_checkable
+class AgenticPlanner(Protocol):
+    """Iterative decision port; any ModelGateway usage must be reported in the decision."""
+
+    async def next_action(
+        self,
+        definition: AgentDefinition,
+        request: Mapping[str, Any],
+        state: AgenticRuntimeState,
+    ) -> AgenticDecision: ...
 
 
 class ToolBoundaryClient(Protocol):
@@ -22,3 +41,17 @@ class ToolBoundaryClient(Protocol):
         *,
         correlation_id: str,
     ) -> dict[str, Any]: ...
+
+
+class CancellationProbe(Protocol):
+    async def is_cancelled(self, run_id: str) -> bool: ...
+
+
+class RuntimeObserver(Protocol):
+    def on_step_started(self, state: AgenticRuntimeState) -> None: ...
+
+    def on_tool_requested(self, tool_call_id: str, tool_id: str, step_index: int) -> None: ...
+
+    def on_tool_result(self, tool_call_id: str, status: str, step_index: int) -> None: ...
+
+    def on_stop(self, reason: StopReason, state: AgenticRuntimeState) -> None: ...

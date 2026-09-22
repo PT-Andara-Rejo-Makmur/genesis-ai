@@ -173,3 +173,54 @@ def test_builtin_skill_packages_are_data_only() -> None:
         if path.is_file() and path.suffix not in {".md", ".yaml"}
     ]
     assert executable_files == []
+
+
+def test_agentic_and_research_policy_have_no_io_provider_or_backend_bypass() -> None:
+    roots = (
+        SOURCE / "runtime" / "agentic",
+        SOURCE / "research" / "decision.py",
+        SOURCE / "research" / "tool_selection.py",
+    )
+    forbidden = (
+        *FORBIDDEN_BACKEND_IMPLEMENTATION_IMPORTS,
+        *DIRECT_PROVIDER_IMPORTS,
+        *FORBIDDEN_DOMAIN_IMPORTS,
+        "httpx",
+        "requests",
+        "urllib",
+    )
+    violations: list[str] = []
+    for root in roots:
+        paths = (root,) if root.is_file() else tuple(root.rglob("*.py"))
+        for path in paths:
+            for module in imported_modules(path):
+                if module.startswith(forbidden):
+                    violations.append(f"{path.relative_to(ROOT)} imports {module}")
+    assert violations == []
+
+
+def test_h5_runtime_defines_no_executor_persistence_or_governance_mutation() -> None:
+    forbidden_classes = {"ToolExecutor", "RunRepository", "ResearchProviderClient"}
+    forbidden_functions = {
+        "approve",
+        "release",
+        "activate",
+        "persist_run",
+        "save_step",
+        "cancel_run",
+    }
+    violations: list[str] = []
+    for path in (SOURCE / "runtime" / "agentic").rglob("*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ClassDef) and node.name in forbidden_classes:
+                violations.append(f"{path.relative_to(ROOT)} defines {node.name}")
+            if (
+                isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                and node.name in forbidden_functions
+            ):
+                violations.append(f"{path.relative_to(ROOT)} defines {node.name}")
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+                if node.func.id in {"eval", "exec", "__import__"}:
+                    violations.append(f"{path.relative_to(ROOT)} calls {node.func.id}")
+    assert violations == []
