@@ -16,6 +16,13 @@ from genesis.runtime.agentic.models import (
 from genesis.runtime.agentic.stopping import StoppingPolicy
 from genesis.runtime.limits import ExecutionBudget
 
+_CLASSIFICATION_RANK = {
+    "PUBLIC": 0,
+    "INTERNAL": 1,
+    "CONFIDENTIAL": 2,
+    "RESTRICTED": 3,
+}
+
 
 def fail(
     state: AgenticRuntimeState,
@@ -48,14 +55,7 @@ def required_limit(value: int | None, name: str) -> int:
 def initial_state(request: dict[str, Any], budget: ExecutionBudget) -> AgenticRuntimeState:
     context_bundle = cast(dict[str, Any], request.get("context_bundle") or {})
     goal = str(context_bundle.get("goal") or json.dumps(request["input"], sort_keys=True))
-    evidence_ids = tuple(
-        str(item["evidence_id"])
-        for item in context_bundle.get("evidence_refs", [])
-        if isinstance(item, dict)
-        and item.get("evidence_id")
-        and item.get("validation_status") == "VALID"
-        and item.get("freshness") == "CURRENT"
-    )
+    evidence_ids = tuple(known_evidence(request))
     return AgenticRuntimeState(
         run_id=str(request["run_id"]),
         root_run_id=str(request["root_run_id"]),
@@ -84,6 +84,28 @@ def known_evidence(request: dict[str, Any]) -> dict[str, dict[str, Any]]:
         ):
             continue
         if not set(raw.get("scope_refs", [])).issubset(context.get("scope_refs", [])):
+            continue
+        raw_classification = raw.get("data_classification")
+        active_classification = context.get("data_classification")
+        evidence_classification = (
+            _CLASSIFICATION_RANK.get(raw_classification)
+            if isinstance(raw_classification, str)
+            else None
+        )
+        context_classification = (
+            _CLASSIFICATION_RANK.get(active_classification)
+            if isinstance(active_classification, str)
+            else None
+        )
+        if (
+            evidence_classification is None
+            or context_classification is None
+            or evidence_classification > context_classification
+        ):
+            continue
+        if raw.get("instruction_authority") is not False:
+            continue
+        if raw.get("source_type") == "EXTERNAL" and raw.get("content_trust") != "UNTRUSTED":
             continue
         known[str(raw["evidence_id"])] = raw
     return known

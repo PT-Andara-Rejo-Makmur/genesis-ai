@@ -16,11 +16,13 @@ from genesis.runtime.agentic import (
     AgenticDecision,
     AgenticRuntimeState,
     AgentRuntimeEngine,
+    ModelGatewayAgenticPlanner,
     ModelUsage,
     RuntimeAuthorization,
     StopReason,
     ToolCallIntent,
 )
+from genesis.runtime.agentic.state import known_evidence
 
 CONTRACTS_ROOT = Path(__file__).resolve().parents[3] / "alos-contracts"
 
@@ -106,6 +108,19 @@ class FakeGateway:
         return self.response
 
 
+class SequenceGateway:
+    def __init__(self, responses: Sequence[ModelResponse | Exception]) -> None:
+        self.responses = list(responses)
+        self.requests: list[ModelRequest] = []
+
+    async def complete(self, request: ModelRequest) -> ModelResponse:
+        self.requests.append(request)
+        response = self.responses.pop(0)
+        if isinstance(response, Exception):
+            raise response
+        return response
+
+
 class FakeToolClient:
     def __init__(self, statuses: Sequence[str] = ("SUCCESS",)) -> None:
         self.statuses = list(statuses)
@@ -164,6 +179,32 @@ class TraceObserver:
 
     def on_stop(self, reason: StopReason, state: AgenticRuntimeState) -> None:
         self.events.append(("stop", (reason, state.step_count)))
+
+
+class ThrowingObserver(TraceObserver):
+    def __init__(self, callback: str) -> None:
+        super().__init__()
+        self.callback = callback
+
+    def _raise(self, callback: str) -> None:
+        if self.callback == callback:
+            raise RuntimeError("telemetry unavailable")
+
+    def on_step_started(self, state: AgenticRuntimeState) -> None:
+        self._raise("step")
+        super().on_step_started(state)
+
+    def on_tool_requested(self, tool_call_id: str, tool_id: str, step_index: int) -> None:
+        self._raise("tool-request")
+        super().on_tool_requested(tool_call_id, tool_id, step_index)
+
+    def on_tool_result(self, tool_call_id: str, status: str, step_index: int) -> None:
+        self._raise("tool-result")
+        super().on_tool_result(tool_call_id, status, step_index)
+
+    def on_stop(self, reason: StopReason, state: AgenticRuntimeState) -> None:
+        self._raise("stop")
+        super().on_stop(reason, state)
 
 
 def definition(**changes: Any) -> AgentDefinition:
@@ -680,3 +721,245 @@ async def test_evidence_is_real_selected_and_never_fabricated() -> None:
     failed = await runtime2.run(definition(), run_request(with_evidence=True), authorization())
     assert failed["error"]["code"] == "EVIDENCE_INSUFFICIENT"
     assert failed["evidence_refs"] == []
+
+
+def planner_response(
+    payload: dict[str, Any], *, input_tokens: int, output_tokens: int, cost: float
+) -> ModelResponse:
+    return ModelResponse(
+        content=json.dumps(payload),
+        route_id="route.planner",
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        cost=cost,
+    )
+
+
+@pytest.mark.asyncio
+async def test_model_gateway_planner_iterates_with_visible_remaining_budget() -> None:
+    gateway = SequenceGateway(
+        (
+            planner_response(
+                {
+                    "kind": "TOOL",
+                    "tool_intent": {
+                        "tool_id": "diagnostic.echo",
+                        "arguments": {"sequence": 1},
+                    },
+                },
+                input_tokens=10,
+                output_tokens=5,
+                cost=0.5,
+            ),
+            planner_response(
+                {"kind": "FINISH", "output": {"summary": "planned"}},
+                input_tokens=4,
+                output_tokens=1,
+                cost=0.25,
+            ),
+        )
+    )
+    planner = ModelGatewayAgenticPlanner(model_gateway=gateway)
+    runtime, _, tools = engine(planner, gateway=gateway)  # type: ignore[arg-type]
+    result = await runtime.run(
+        definition(), run_request(max_tokens=50, max_cost=2), authorization()
+    )
+
+    assert result["status"] == "COMPLETED"
+    assert result["usage"]["input_tokens"] == 14
+    assert result["usage"]["output_tokens"] == 6
+    assert result["usage"]["estimated_cost"] == 0.75
+    assert len(gateway.requests) == 2
+    assert gateway.requests[0].requested_max_tokens == 50
+    assert gateway.requests[1].requested_max_tokens == 35
+    assert gateway.requests[1].budget.max_cost == 1.5
+    assert len(tools.requests) == 1
+
+
+@pytest.mark.asyncio
+async def test_model_gateway_planner_receives_only_effective_tools() -> None:
+    gateway = SequenceGateway(
+        (
+            planner_response(
+                {"kind": "FINISH", "output": {"summary": "safe"}},
+                input_tokens=1,
+                output_tokens=1,
+                cost=0,
+            ),
+        )
+    )
+    planner = ModelGatewayAgenticPlanner(model_gateway=gateway)
+    runtime, _, _ = engine(planner, gateway=gateway)  # type: ignore[arg-type]
+    await runtime.run(
+        definition(allowed_tool_ids=("diagnostic.echo",)),
+        run_request(requested_tool_ids=("diagnostic.echo", "diagnostic.second")),
+        authorization(tools=("diagnostic.echo", "diagnostic.second")),
+    )
+    operational = json.loads(gateway.requests[0].messages[1]["content"])
+    assert operational["allowed_tool_ids"] == ["diagnostic.echo"]
+
+
+@pytest.mark.asyncio
+async def test_model_gateway_planner_cannot_authorize_returned_tool() -> None:
+    gateway = SequenceGateway(
+        (
+            planner_response(
+                {
+                    "kind": "TOOL",
+                    "tool_intent": {
+                        "tool_id": "diagnostic.second",
+                        "arguments": {},
+                    },
+                },
+                input_tokens=1,
+                output_tokens=1,
+                cost=0,
+            ),
+        )
+    )
+    planner = ModelGatewayAgenticPlanner(model_gateway=gateway)
+    runtime, _, tools = engine(planner, gateway=gateway)  # type: ignore[arg-type]
+    result = await runtime.run(
+        definition(),
+        run_request(requested_tool_ids=("diagnostic.echo",)),
+        authorization(),
+    )
+    assert result["error"]["code"] == "TOOL_NOT_REQUESTED"
+    assert tools.requests == []
+
+
+@pytest.mark.asyncio
+async def test_model_gateway_planner_cannot_continue_after_budget_exhaustion() -> None:
+    gateway = SequenceGateway(
+        (
+            planner_response(
+                {
+                    "kind": "TOOL",
+                    "tool_intent": {"tool_id": "diagnostic.echo", "arguments": {}},
+                },
+                input_tokens=6,
+                output_tokens=4,
+                cost=0.5,
+            ),
+            planner_response(
+                {"kind": "FINISH", "output": {"summary": "must not run"}},
+                input_tokens=1,
+                output_tokens=1,
+                cost=0.1,
+            ),
+        )
+    )
+    planner = ModelGatewayAgenticPlanner(model_gateway=gateway)
+    runtime, _, _ = engine(planner, gateway=gateway)  # type: ignore[arg-type]
+    result = await runtime.run(definition(), run_request(max_tokens=10), authorization())
+    assert result["error"]["code"] == "BUDGET_TOKENS_EXHAUSTED"
+    assert len(gateway.requests) == 1
+
+
+@pytest.mark.asyncio
+async def test_model_gateway_planner_cost_is_cumulative_and_strict_json() -> None:
+    over_cost = SequenceGateway(
+        (
+            planner_response(
+                {"kind": "FINISH", "output": {"summary": "over"}},
+                input_tokens=1,
+                output_tokens=1,
+                cost=2.1,
+            ),
+        )
+    )
+    runtime, _, _ = engine(
+        ModelGatewayAgenticPlanner(model_gateway=over_cost),
+        gateway=over_cost,  # type: ignore[arg-type]
+    )
+    result = await runtime.run(
+        definition(), run_request(max_cost=2), authorization()
+    )
+    assert result["error"]["code"] == "BUDGET_COST_EXCEEDED"
+
+    malformed = SequenceGateway(
+        (
+            ModelResponse(
+                content="not-json",
+                route_id="route.planner",
+                input_tokens=1,
+                output_tokens=1,
+            ),
+        )
+    )
+    invalid_runtime, _, _ = engine(
+        ModelGatewayAgenticPlanner(model_gateway=malformed),
+        gateway=malformed,  # type: ignore[arg-type]
+    )
+    invalid = await invalid_runtime.run(definition(), run_request(), authorization())
+    assert invalid["error"]["code"] == "PLANNER_OUTPUT_INVALID"
+    assert invalid["usage"]["input_tokens"] == 1
+    assert invalid["usage"]["output_tokens"] == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("callback", ("step", "tool-request", "tool-result", "stop"))
+async def test_observer_failure_never_changes_functional_result(callback: str) -> None:
+    planner: Any
+    if callback in {"tool-request", "tool-result"}:
+        planner = ObservationPlanner()
+    else:
+        planner = QueuePlanner((finish({"summary": "done"}),))
+    runtime, _, _ = engine(planner, observer=ThrowingObserver(callback))
+    result = await runtime.run(definition(), run_request(), authorization())
+    assert result["status"] == "COMPLETED"
+    assert result.get("error") is None
+
+
+@pytest.mark.parametrize(
+    ("evidence_classification", "context_classification", "eligible"),
+    (
+        ("PUBLIC", "INTERNAL", True),
+        ("INTERNAL", "INTERNAL", True),
+        ("CONFIDENTIAL", "INTERNAL", False),
+        ("RESTRICTED", "CONFIDENTIAL", False),
+    ),
+)
+def test_runtime_evidence_classification_is_fail_closed(
+    evidence_classification: str, context_classification: str, eligible: bool
+) -> None:
+    request = run_request(with_evidence=True)
+    request["execution_context"]["data_classification"] = context_classification
+    request["context_bundle"]["evidence_refs"][0][
+        "data_classification"
+    ] = evidence_classification
+    assert bool(known_evidence(request)) is eligible
+
+
+@pytest.mark.parametrize(
+    ("changes", "eligible"),
+    (
+        ({"source_type": "EXTERNAL", "content_trust": "UNTRUSTED"}, True),
+        ({"source_type": "EXTERNAL", "content_trust": "GOVERNED"}, False),
+        ({"source_type": "EXTERNAL", "instruction_authority": True}, False),
+        ({"freshness": "STALE"}, False),
+        ({"validation_status": "INVALID"}, False),
+        ({"scope_refs": ["scope.other"]}, False),
+    ),
+)
+def test_runtime_evidence_trust_freshness_validity_and_scope(
+    changes: dict[str, Any], eligible: bool
+) -> None:
+    request = run_request(with_evidence=True)
+    request["context_bundle"]["evidence_refs"][0].update(changes)
+    assert bool(known_evidence(request)) is eligible
+
+
+@pytest.mark.asyncio
+async def test_excluded_evidence_cannot_be_fabricated_into_result() -> None:
+    request = run_request(with_evidence=True)
+    request["context_bundle"]["evidence_refs"][0]["data_classification"] = "CONFIDENTIAL"
+    decision = finish(
+        {"summary": "unsupported"},
+        evidence_ids=("evidence_h5_001",),
+        requires_evidence=True,
+    )
+    runtime, _, _ = engine(QueuePlanner((decision,)))
+    result = await runtime.run(definition(), request, authorization())
+    assert result["error"]["code"] == "EVIDENCE_INSUFFICIENT"
+    assert result["evidence_refs"] == []

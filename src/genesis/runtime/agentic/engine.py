@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from time import monotonic
 from typing import Any, cast
@@ -163,6 +163,7 @@ class AgentRuntimeEngine:
             definition.input_schema, request["input"], "INPUT_SCHEMA_INVALID"
         )
         known_evidence_catalog = known_evidence(request)
+        planner_request = self._planner_request(definition, request, authorization)
         legacy_plan: ExecutionPlan | None = None
 
         while state.step_count < required_limit(budget.max_steps, "max_steps"):
@@ -175,10 +176,10 @@ class AgentRuntimeEngine:
                     StopReason.BUDGET_EXHAUSTED,
                 )
             state = state.model_copy(update={"step_count": state.step_count + 1})
-            self._observer.on_step_started(state)
+            self._safe_notify(self._observer.on_step_started, state)
             try:
                 decision, legacy_plan = await self._next_decision(
-                    definition, request, state, legacy_plan
+                    definition, planner_request, state, legacy_plan
                 )
             except RuntimeFailure:
                 raise
@@ -357,7 +358,8 @@ class AgentRuntimeEngine:
                 "Generated ToolRequest does not satisfy the canonical contract.",
                 StopReason.OUTPUT_INVALID,
             ) from exc
-        self._observer.on_tool_requested(
+        self._safe_notify(
+            self._observer.on_tool_requested,
             str(canonical_tool_request["tool_call_id"]), intent.tool_id, state.step_count
         )
         context = cast(dict[str, Any], request["execution_context"])
@@ -399,7 +401,8 @@ class AgentRuntimeEngine:
                 "observations": (*state.observations, observation),
             }
         )
-        self._observer.on_tool_result(
+        self._safe_notify(
+            self._observer.on_tool_result,
             observation.tool_call_id, observation.status, observation.step_index
         )
         if observation.status in {"DENIED", "REJECTED"}:
@@ -582,7 +585,23 @@ class AgentRuntimeEngine:
             )
 
     def _notify_stop(self, reason: StopReason, state: AgenticRuntimeState) -> None:
+        self._safe_notify(self._observer.on_stop, reason, state)
+
+    def _safe_notify(self, callback: Callable[..., None], *args: Any) -> None:
         try:
-            self._observer.on_stop(reason, state)
+            callback(*args)
         except Exception:
             return
+
+    @staticmethod
+    def _planner_request(
+        definition: AgentDefinition,
+        request: dict[str, Any],
+        authorization: RuntimeAuthorization,
+    ) -> dict[str, Any]:
+        effective = sorted(
+            set(cast(list[str], request.get("requested_tool_ids", [])))
+            .intersection(definition.allowed_tool_ids)
+            .intersection(authorization.allowed_tool_ids)
+        )
+        return {**request, "requested_tool_ids": effective}

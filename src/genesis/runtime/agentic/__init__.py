@@ -14,7 +14,7 @@ from genesis.runtime.agentic.models import (
     ToolCallIntent,
     ToolObservation,
 )
-from genesis.runtime.agentic.planner import SinglePassPlanner
+from genesis.runtime.agentic.planner import ModelGatewayAgenticPlanner, SinglePassPlanner
 from genesis.runtime.agentic.protocols import (
     AgenticPlanner,
     CancellationProbe,
@@ -32,6 +32,7 @@ __all__ = [
     "AgenticRuntimeState",
     "CancellationProbe",
     "ExecutionPlan",
+    "ModelGatewayAgenticPlanner",
     "ModelUsage",
     "RuntimeAuthorization",
     "RuntimeFailure",
