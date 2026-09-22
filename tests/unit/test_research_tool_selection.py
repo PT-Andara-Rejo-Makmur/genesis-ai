@@ -139,7 +139,7 @@ def test_memory_is_used_only_under_existing_risk_policy() -> None:
     assert high.kind is ResearchToolSelectionKind.INSUFFICIENT_EVIDENCE
 
 
-def test_external_is_selected_only_after_gap_and_exact_governed_proposal() -> None:
+def test_authorized_internal_retrieval_precedes_external_escalation() -> None:
     internal = tool("documents.internal.search", ResearchToolCategory.INTERNAL_DOCUMENT)
     external = tool(
         "research.external.retrieve",
@@ -148,6 +148,19 @@ def test_external_is_selected_only_after_gap_and_exact_governed_proposal() -> No
         estimated_cost=1,
     )
     result = select(decision_request(), internal, external)
+    assert result.selected_tool_id == "documents.internal.search"
+    assert result.selected_category is ResearchToolCategory.INTERNAL_DOCUMENT
+    assert "AUTHORIZED_EVIDENCE_GAP_TOOL" in result.reason_codes
+
+
+def test_external_is_selected_only_when_governed_options_are_exhausted() -> None:
+    external = tool(
+        "research.external.retrieve",
+        ResearchToolCategory.EXTERNAL_RESEARCH,
+        permission_refs=("research.external.read",),
+        estimated_cost=1,
+    )
+    result = select(decision_request(), external)
     assert result.selected_tool_id == "research.external.retrieve"
     assert result.selected_category is ResearchToolCategory.EXTERNAL_RESEARCH
     assert "EXTERNAL_RESEARCH_GAP_AUTHORIZED" in result.reason_codes
@@ -187,6 +200,78 @@ def test_caller_supplied_internal_tool_can_fill_gap_when_external_disabled() -> 
     )
     assert result.kind is ResearchToolSelectionKind.SELECT_TOOL
     assert result.selected_category is ResearchToolCategory.INTERNAL_DOCUMENT
+
+
+def test_external_cost_ceiling_does_not_reject_non_external_categories() -> None:
+    internal = tool(
+        "documents.internal.search",
+        ResearchToolCategory.INTERNAL_DOCUMENT,
+        estimated_cost=5,
+    )
+    result = select(
+        decision_request(
+            maximum_external_cost=0,
+            external=ExternalResearchBoundary(enabled=False),
+        ),
+        internal,
+    )
+    assert result.kind is ResearchToolSelectionKind.SELECT_TOOL
+    assert result.selected_tool_id == "documents.internal.search"
+
+
+def test_explicit_generic_tool_cost_ceiling_applies_to_all_categories() -> None:
+    request = ResearchToolSelectionRequest(
+        evidence_request=decision_request(
+            maximum_external_cost=0,
+            external=ExternalResearchBoundary(enabled=False),
+        ),
+        available_tools=(
+            tool(
+                "documents.internal.search",
+                ResearchToolCategory.INTERNAL_DOCUMENT,
+                estimated_cost=5,
+            ),
+        ),
+        maximum_tool_cost=4,
+    )
+    result = ResearchToolSelectionPolicy(evidence_decider=decider()).select(request)
+    assert result.kind is ResearchToolSelectionKind.INSUFFICIENT_EVIDENCE
+
+
+@pytest.mark.parametrize(
+    ("domain", "expected"),
+    (
+        (ResearchDomain.TECHNOLOGY, "documents.internal.search"),
+        (ResearchDomain.PROPERTY_BUSINESS, "documents.internal.search"),
+        (ResearchDomain.MANAGEMENT, "documents.internal.search"),
+        (ResearchDomain.PROPERTY_MARKET, "datasets.public.market"),
+    ),
+)
+def test_domain_preferences_choose_among_governed_categories(
+    domain: ResearchDomain, expected: str
+) -> None:
+    request = decision_request(
+        domain=domain,
+        allowed_tool_ids=(
+            "documents.internal.search",
+            "datasets.public.market",
+            "connector.authorized",
+            "research.external.retrieve",
+        ),
+    )
+    result = select(
+        request,
+        tool("documents.internal.search", ResearchToolCategory.INTERNAL_DOCUMENT),
+        tool("datasets.public.market", ResearchToolCategory.PUBLIC_DATASET),
+        tool("connector.authorized", ResearchToolCategory.CONNECTOR),
+        tool(
+            "research.external.retrieve",
+            ResearchToolCategory.EXTERNAL_RESEARCH,
+            permission_refs=("research.external.read",),
+            estimated_cost=1,
+        ),
+    )
+    assert result.selected_tool_id == expected
 
 
 def test_property_market_prefers_fresh_public_dataset_category() -> None:

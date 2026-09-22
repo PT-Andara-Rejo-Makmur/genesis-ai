@@ -48,6 +48,7 @@ class ResearchToolSelectionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     evidence_request: ResearchDecisionRequest
     available_tools: tuple[AuthorizedResearchTool, ...] = ()
+    maximum_tool_cost: float | None = Field(default=None, ge=0)
 
 
 class ResearchToolSelectionDecision(BaseModel):
@@ -116,7 +117,15 @@ class ResearchToolSelectionPolicy:
             )
 
         candidates = self._eligible_tools(request)
-        if evidence.decision is ResearchDecisionKind.REQUEST_EXTERNAL_RESEARCH:
+        governed = [
+            item
+            for item in candidates
+            if item.category is not ResearchToolCategory.EXTERNAL_RESEARCH
+        ]
+        if governed:
+            candidates = governed
+            reason = "AUTHORIZED_EVIDENCE_GAP_TOOL"
+        elif evidence.decision is ResearchDecisionKind.REQUEST_EXTERNAL_RESEARCH:
             proposal_id = evidence.retrieval.tool_id if evidence.retrieval is not None else None
             candidates = [
                 item
@@ -126,11 +135,7 @@ class ResearchToolSelectionPolicy:
             ]
             reason = "EXTERNAL_RESEARCH_GAP_AUTHORIZED"
         else:
-            candidates = [
-                item
-                for item in candidates
-                if item.category is not ResearchToolCategory.EXTERNAL_RESEARCH
-            ]
+            candidates = []
             reason = "AUTHORIZED_EVIDENCE_GAP_TOOL"
 
         if not candidates:
@@ -172,7 +177,15 @@ class ResearchToolSelectionPolicy:
                 continue
             if not set(item.scope_refs).issubset(scopes):
                 continue
-            if item.estimated_cost > evidence.maximum_external_cost:
+            if (
+                request.maximum_tool_cost is not None
+                and item.estimated_cost > request.maximum_tool_cost
+            ):
+                continue
+            if (
+                item.category is ResearchToolCategory.EXTERNAL_RESEARCH
+                and item.estimated_cost > evidence.maximum_external_cost
+            ):
                 continue
             if (
                 evidence.data_classification is DataClassification.RESTRICTED
