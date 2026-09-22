@@ -267,6 +267,26 @@ def test_different_content_is_not_duplicate_even_with_similar_ids() -> None:
     assert len(result.selected) == 2
 
 
+def test_same_content_with_independent_lineage_remains_corroborating() -> None:
+    first = candidate(memory_id="memory_source_a_001")
+    second = candidate(
+        memory_id="memory_source_b_001",
+        source=evidence(
+            evidence_id="evidence_source_b_001",
+            source_id="source_independent_b",
+            content_hash="sha256:" + "b" * 64,
+        ),
+    )
+    forward = select(first, second)
+    reverse = select(second, first)
+    assert forward == reverse
+    assert forward.suppressed_duplicates == ()
+    assert {item.candidate.memory_id for item in forward.selected} == {
+        "memory_source_a_001",
+        "memory_source_b_001",
+    }
+
+
 @pytest.mark.parametrize(
     ("change", "reason_code"),
     [

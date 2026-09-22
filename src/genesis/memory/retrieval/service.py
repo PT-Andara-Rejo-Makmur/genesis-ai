@@ -217,11 +217,19 @@ class MemoryRetrievalService:
     @staticmethod
     def fingerprint(candidate: MemoryCandidate) -> str:
         content = " ".join(candidate.content.casefold().split())
+        lineage = ",".join(
+            sorted(
+                f"{item.source_id}:{item.content_hash}"
+                for item in candidate.evidence_refs
+            )
+        )
         payload = "|".join(
             (
                 content,
                 candidate.domain.value if candidate.domain else "",
                 candidate.finding_kind.value if candidate.finding_kind else "",
+                ",".join(sorted(candidate.source_refs)),
+                lineage,
             )
         )
         return f"sha256:{hashlib.sha256(payload.encode()).hexdigest()}"
