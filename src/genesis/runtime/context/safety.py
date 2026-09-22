@@ -128,8 +128,7 @@ class ContextSafetyGuard:
                     context.correlation_id,
                     details={"segment_id": item.segment_id},
                 )
-            evidence = item.evidence
-            if evidence is not None:
+            for evidence in item.all_evidence:
                 if (
                     evidence.tenant_id != context.tenant_id
                     or evidence.organization_id != context.organization_id
@@ -147,7 +146,10 @@ class ContextSafetyGuard:
                     item.scope_refs,
                     context.correlation_id,
                 )
-                if evidence.correlation_id != context.correlation_id:
+                if (
+                    item.source is not ContextSource.MEMORY
+                    and evidence.correlation_id != context.correlation_id
+                ):
                     raise ContextFailure(
                         "CONTEXT_EVIDENCE_CORRELATION_MISMATCH",
                         "Evidence correlation does not match ExecutionContext.",
@@ -161,14 +163,20 @@ class ContextSafetyGuard:
                         context.correlation_id,
                         details={"segment_id": item.segment_id},
                     )
-                if evidence.source_type != item.source.value:
+                if (
+                    item.source is not ContextSource.MEMORY
+                    and evidence.source_type != item.source.value
+                ):
                     raise ContextFailure(
                         "CONTEXT_EVIDENCE_SOURCE_MISMATCH",
                         "Evidence source semantics do not match the context segment.",
                         context.correlation_id,
                         details={"segment_id": item.segment_id},
                     )
-                if evidence.content_trust != item.trust.value:
+                if (
+                    item.source is not ContextSource.MEMORY
+                    and evidence.content_trust != item.trust.value
+                ):
                     raise ContextFailure(
                         "CONTEXT_EVIDENCE_TRUST_MISMATCH",
                         "Evidence trust semantics do not match the context segment.",
@@ -196,7 +204,28 @@ class ContextSafetyGuard:
                     context.correlation_id,
                     details={"segment_id": item.segment_id},
                 )
-            if item.source is ContextSource.EXTERNAL and any(
+            has_external_origin = any(
+                evidence.source_type == "EXTERNAL" for evidence in item.all_evidence
+            )
+            if has_external_origin and item.trust.value != "UNTRUSTED":
+                raise ContextFailure(
+                    "CONTEXT_EVIDENCE_TRUST_MISMATCH",
+                    "External-origin memory must remain untrusted.",
+                    context.correlation_id,
+                    details={"segment_id": item.segment_id},
+                )
+            if (
+                item.source is ContextSource.MEMORY
+                and not has_external_origin
+                and item.trust.value != "GOVERNED"
+            ):
+                raise ContextFailure(
+                    "CONTEXT_EVIDENCE_TRUST_MISMATCH",
+                    "Internal-origin memory must preserve governed trust.",
+                    context.correlation_id,
+                    details={"segment_id": item.segment_id},
+                )
+            if (item.source is ContextSource.EXTERNAL or has_external_origin) and any(
                 pattern.search(item.content) for pattern in _INJECTION_PATTERNS
             ):
                 raise ContextFailure(

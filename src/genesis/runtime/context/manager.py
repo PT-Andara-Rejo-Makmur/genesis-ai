@@ -104,7 +104,11 @@ class ContextManager:
             correlation_id=correlation_id,
         )
         selected_evidence = tuple(
-            item.evidence for item in selection.selected if item.evidence is not None
+            {
+                evidence.evidence_id: evidence
+                for item in selection.selected
+                for evidence in item.all_evidence
+            }.values()
         )
         selected_memory = tuple(
             dict.fromkeys(
@@ -259,9 +263,12 @@ class ContextManager:
                 if item.evidence is not None
             ],
             "evidence_refs": [
-                item.evidence.model_dump(mode="json", exclude_none=True)
-                for item in evidenced
-                if item.evidence is not None
+                evidence.model_dump(mode="json", exclude_none=True)
+                for evidence in {
+                    evidence.evidence_id: evidence
+                    for item in selected
+                    for evidence in item.all_evidence
+                }.values()
             ],
         }
 

@@ -158,6 +158,7 @@ class ContextSegment(BaseModel):
     permission_refs: tuple[str, ...] = ()
     tool_ids: tuple[str, ...] = ()
     evidence: EvidenceReference | None = None
+    lineage_evidence_refs: tuple[EvidenceReference, ...] = ()
     memory_ref: str | None = Field(default=None, min_length=3, max_length=128)
 
     @model_validator(mode="after")
@@ -168,7 +169,18 @@ class ContextSegment(BaseModel):
             raise ValueError("authoritative evidence requires EvidenceReference")
         if self.source is ContextSource.MEMORY and self.memory_ref is None:
             raise ValueError("MEMORY context requires memory_ref")
+        if self.source is ContextSource.MEMORY and not self.lineage_evidence_refs:
+            raise ValueError("MEMORY context requires evidence lineage")
+        if self.source is not ContextSource.MEMORY and self.lineage_evidence_refs:
+            raise ValueError("historical lineage is only valid for MEMORY context")
         return self
+
+    @property
+    def all_evidence(self) -> tuple[EvidenceReference, ...]:
+        evidence = (self.evidence,) if self.evidence is not None else ()
+        return tuple(
+            {item.evidence_id: item for item in (*evidence, *self.lineage_evidence_refs)}.values()
+        )
 
     @property
     def size_characters(self) -> int:
