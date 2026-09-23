@@ -1,1 +1,0 @@
-"""Technology research domain profile."""
