@@ -10,6 +10,9 @@
 - An optional H7 `ResearchOrchestrationResult` for the shared R&D safety evaluation.
 
 GENESIS never resolves a mutable "latest" registry object while evaluating a subject.
+Observed facts do not contain a caller-authoritative PASS flag. Registered Context, Skill, Memory,
+Runtime, Delegation, and Research probes derive PASS/FAIL/NOT_RUN. Skill probes consume the existing
+`SkillEvaluator`; Research probes consume the shared `RDSafetyEvaluator`.
 
 ## AI produces
 
@@ -21,6 +24,10 @@ GENESIS never resolves a mutable "latest" registry object while evaluating a sub
 - A canonically validated advisory `ReviewPackage` draft without human decisions.
 
 `READY_FOR_IT_REVIEW` is not approval, release, or activation.
+RC1 readiness and canonical package assembly require the exact regression set ID/version and every
+required case. Missing cases remain visible as blockers and yield INCOMPLETE. R&D source quality is
+an explicit gate: weak, unverified, excluded, stale-only, or confidence-incompatible support cannot
+silently satisfy a material result.
 
 ## Backend later owns
 

@@ -11,11 +11,13 @@ from genesis.research.domains import domain_profile
 from genesis.research.models import ResearchDomain
 from genesis.research.orchestration import (
     ClaimKind,
+    EvidenceUsability,
+    QualityTier,
     ResearchOrchestrationResult,
     RetrievalStatus,
     SourceMode,
 )
-from genesis.research.sources import FreshnessStatus
+from genesis.research.sources import FreshnessStatus, SourceReliability
 
 EVIDENCE_REF_SCHEMA = "https://schemas.alos.dev/v1/evidence/evidence-ref.schema.json"
 _AUTHORITY_WORDING = re.compile(
@@ -199,6 +201,47 @@ class RDSafetyEvaluator:
             for code in ("FAILED", "TIMEOUT", "DENIED", "NO_RESULT", "RETRIEVAL")
         )
 
+        quality_by_evidence = {item.evidence_id: item for item in result.evidence_assessments}
+        material_evidence_ids = material_fact_ids | finding_evidence | recommendation_evidence
+        source_quality_failures: set[str] = set()
+        for evidence_id in material_evidence_ids:
+            quality = quality_by_evidence.get(evidence_id)
+            if quality is None or quality.usability is EvidenceUsability.EXCLUDED:
+                source_quality_failures.add(evidence_id)
+                continue
+            if quality.tier not in {QualityTier.STRONG, QualityTier.MODERATE}:
+                source_quality_failures.add(evidence_id)
+                continue
+            if quality.reliability not in {SourceReliability.HIGH, SourceReliability.MEDIUM}:
+                source_quality_failures.add(evidence_id)
+                continue
+            if quality.usability not in {
+                EvidenceUsability.PRIMARY,
+                EvidenceUsability.SUPPORTING,
+            }:
+                source_quality_failures.add(evidence_id)
+
+        confidence_violations: set[str] = set()
+        for finding in result.findings:
+            caps = [
+                quality_by_evidence[evidence_id].confidence_cap
+                for evidence_id in finding.evidence_ids
+                if evidence_id in quality_by_evidence
+            ]
+            if not caps or finding.confidence > min(caps):
+                confidence_violations.add(finding.finding_id)
+        for recommendation in result.recommendations:
+            caps = [
+                quality_by_evidence[evidence_id].confidence_cap
+                for evidence_id in recommendation.evidence_ids
+                if evidence_id in quality_by_evidence
+            ]
+            qualitative_cap = (
+                0.5 if recommendation.conflict_ids or recommendation.assumption_ids else 1.0
+            )
+            if not caps or recommendation.confidence > min((*caps, qualitative_cap)):
+                confidence_violations.add(recommendation.recommendation_id)
+
         recommendation_authority = any(
             _AUTHORITY_WORDING.search(item.proposed_action) for item in result.recommendations
         )
@@ -210,6 +253,15 @@ class RDSafetyEvaluator:
         )
         if not result.recommendations:
             recommendation_substantive = bool(result.limitations)
+        recommendation_quality = (
+            recommendation_substantive
+            and not recommendation_authority
+            and not unknown_finding_refs
+            and not unknown_analysis_refs
+            and not unknown_citations
+            and not source_quality_failures
+            and not confidence_violations
+        )
 
         profile = domain_profile(result.plan.domain)
         checks = (
@@ -254,6 +306,12 @@ class RDSafetyEvaluator:
                 not high_confidence_stale and stale_disclosed,
                 "STALE_ONLY_HIGH_CONFIDENCE",
             ),
+            self._check(
+                "rd.source-quality",
+                not source_quality_failures and not confidence_violations,
+                "MATERIAL_SOURCE_QUALITY_INADEQUATE",
+                source_quality_failures | confidence_violations,
+            ),
             self._check("rd.conflicts", not hidden_conflicts, "UNRESOLVED_CONFLICT_HIDDEN"),
             self._check("rd.assumptions", not assumption_as_fact, "ASSUMPTION_PRESENTED_AS_FACT"),
             self._check("rd.safe-failure", failure_visible, "FAILED_RETRIEVAL_NOT_DISCLOSED"),
@@ -261,6 +319,12 @@ class RDSafetyEvaluator:
                 "rd.advisory-only",
                 not recommendation_authority,
                 "RECOMMENDATION_AUTHORITY_SEMANTICS",
+            ),
+            self._check(
+                "rd.recommendation-quality",
+                recommendation_quality,
+                "RECOMMENDATION_QUALITY_INADEQUATE",
+                confidence_violations,
             ),
             self._check(
                 "rd.domain-quality",

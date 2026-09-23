@@ -7,13 +7,20 @@ The frozen surface includes Agent/Factory, Context/Evidence, Skill Runtime, Memo
 Agentic Runtime, Delegation, Research Intelligence, and the H8 eval/readiness/review package
 foundation. No major new AI capability is planned for H9 or H10.
 
+H8 PASS is derived only by code-registered invariant probes over typed observed facts. Caller
+booleans are not part of the observation contract. Material and blocker PASS results require an
+observable fixture/evidence artifact. RC1 readiness is bound to the exact
+`mvp2-h8-rc1-ai-regression` version `1.0.0`; a wrong suite identity, an omitted required case, or a
+required NOT_RUN yields INCOMPLETE. The shared R&D safety evaluator feeds the same suite/readiness
+path and explicitly gates canonical lineage, source quality, confidence, and recommendation quality.
+
 ## Remaining work classification
 
 - **Integration gap:** Backend transport and persistence of eval artifacts and review packages.
 - **Integration gap:** authoritative governance, IT/Director decisions, SoD, and release commands.
 - **Validation work:** cross-repository RC1, Gate 4, UAT, and recovery evidence.
-- **Known limitation:** H8 material-behavior probes consume typed outputs/fixtures; they do not run
-  arbitrary scripts and do not persist results.
+- **Known limitation:** H8 material-behavior probes consume typed component outputs/fixtures; they
+  do not run arbitrary scripts and do not persist results.
 - **Known limitation:** AI-local retrieval/model cost is advisory; Backend remains authoritative.
 
 H9 GENESIS changes are limited to integration fixes, security hardening, regression/blocker

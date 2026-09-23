@@ -13,7 +13,9 @@ from genesis.evals.models import (
     EvaluationSubjectSnapshot,
     EvaluationSuiteResult,
 )
+from genesis.evals.probes import registered_probes
 from genesis.evals.regression import RegressionCaseRef, RegressionSetProposal
+from genesis.evals.research import RDSafetyEvaluator
 
 
 class EvaluationProbe(Protocol):
@@ -24,72 +26,6 @@ class EvaluationProbe(Protocol):
         subject: EvaluationSubjectSnapshot,
         case: RegressionCaseRef,
     ) -> EvaluationCaseResult: ...
-
-
-class RegisteredMaterialBehaviorProbe:
-    """Adapter from tested component output/fixture observations to stable eval cases."""
-
-    def __init__(self, case_id: str) -> None:
-        self.case_id = case_id
-
-    def evaluate(
-        self,
-        subject: EvaluationSubjectSnapshot,
-        case: RegressionCaseRef,
-    ) -> EvaluationCaseResult:
-        observation = subject.observations.get(case.eval_case_id)
-        if observation is None:
-            return EvaluationCaseResult(
-                test_id=case.eval_case_id,
-                area=case.area,
-                taxonomy=case.taxonomy,
-                outcome=EvaluationOutcome.NOT_RUN,
-                severity=case.criticality,
-                required=case.required,
-                summary="Required typed behavior observation was not supplied.",
-                assertions=(
-                    EvaluationAssertionResult(
-                        assertion_id=f"{case.eval_case_id}.observed",
-                        passed=False,
-                        expected="A registered material behavior observation is present.",
-                        observed="Observation missing.",
-                    ),
-                ),
-                evidence=EvaluationEvidence(reason_codes=("EVAL_OBSERVATION_MISSING",)),
-                limitations=("The material behavior could not be evaluated.",),
-                correlation_id=subject.correlation_id,
-                subject_id=subject.subject_id,
-                subject_version=subject.subject_version,
-            )
-        outcome = EvaluationOutcome.PASS if observation.passed else EvaluationOutcome.FAIL
-        return EvaluationCaseResult(
-            test_id=case.eval_case_id,
-            area=case.area,
-            taxonomy=case.taxonomy,
-            outcome=outcome,
-            severity=case.criticality,
-            required=case.required,
-            summary=observation.observed,
-            assertions=(
-                EvaluationAssertionResult(
-                    assertion_id=f"{case.eval_case_id}.invariant",
-                    passed=observation.passed,
-                    expected=case.rationale,
-                    observed=observation.observed,
-                ),
-            ),
-            evidence=EvaluationEvidence(
-                evidence_ids=observation.evidence_ids,
-                evidence_refs=observation.evidence_refs,
-                fixture_ids=observation.fixture_ids,
-                reason_codes=observation.reason_codes,
-                observations=(observation.observed,),
-            ),
-            limitations=observation.limitations,
-            correlation_id=subject.correlation_id,
-            subject_id=subject.subject_id,
-            subject_version=subject.subject_version,
-        )
 
 
 class EvaluationRunner:
@@ -104,10 +40,13 @@ class EvaluationRunner:
         self._probes: Mapping[str, EvaluationProbe] = by_id
 
     @classmethod
-    def for_regression_set(cls, proposal: RegressionSetProposal) -> EvaluationRunner:
-        return cls(
-            RegisteredMaterialBehaviorProbe(item.eval_case_id) for item in proposal.case_refs
-        )
+    def for_regression_set(
+        cls,
+        proposal: RegressionSetProposal,
+        *,
+        research_evaluator: RDSafetyEvaluator | None = None,
+    ) -> EvaluationRunner:
+        return cls(registered_probes(proposal, research_evaluator=research_evaluator))
 
     def run(
         self,

@@ -8,7 +8,9 @@ from typing import Any
 
 from genesis.contracts import CanonicalContractCatalog
 from genesis.evals import (
+    MVP2_H8_REGRESSION_SET,
     AIReadinessStatus,
+    DeterministicReadinessPolicy,
     EvaluationArea,
     EvaluationOutcome,
     EvaluationSuiteResult,
@@ -75,6 +77,15 @@ class ReviewPackageAssembler:
         summary: RiskEvidenceSummary,
     ) -> dict[str, Any]:
         self._validate_trace(subject, suite, summary)
+        if (
+            suite.suite_id != MVP2_H8_REGRESSION_SET.regression_set_id
+            or suite.suite_version != MVP2_H8_REGRESSION_SET.version
+        ):
+            raise ReviewPackageAssemblyError("REVIEW_SUITE_REGRESSION_SET_MISMATCH")
+        strict_readiness = DeterministicReadinessPolicy().assess_against(
+            MVP2_H8_REGRESSION_SET, suite
+        )
+        self._validate_summary_consistency(suite, summary, strict_readiness)
         evidence = self._validated_evidence(subject, suite)
         if not evidence:
             raise ReviewPackageAssemblyError("REVIEW_EVIDENCE_REQUIRED")
@@ -82,10 +93,13 @@ class ReviewPackageAssembler:
             review_type: self._review(review_type, subject, suite, summary, evidence)
             for review_type in ReviewType
         }
-        qa_pass = summary.readiness in {
+        qa_pass = strict_readiness.status in {
             AIReadinessStatus.READY_FOR_IT_REVIEW,
             AIReadinessStatus.READY_WITH_FINDINGS,
-        }
+        } and all(
+            review["status"] not in {"NOT_RUN", "FAIL", "BLOCKED_BY_EVIDENCE"}
+            for review in reviews.values()
+        )
         findings = tuple(
             item.test_id
             for item in suite.case_results
@@ -155,17 +169,29 @@ class ReviewPackageAssembler:
         relevant = tuple(
             item for item in suite.case_results if item.area in _REVIEW_AREAS[review_type]
         )
-        failed = tuple(item for item in relevant if item.outcome is EvaluationOutcome.FAIL)
+        material_failed = tuple(
+            item
+            for item in relevant
+            if item.outcome is EvaluationOutcome.FAIL
+            and item.severity.value in {"MATERIAL", "BLOCKER"}
+        )
+        non_material_failed = tuple(
+            item
+            for item in relevant
+            if item.outcome is EvaluationOutcome.FAIL and item.severity.value in {"INFO", "WARNING"}
+        )
         not_run = tuple(item for item in relevant if item.outcome is EvaluationOutcome.NOT_RUN)
-        if not_run:
+        if not relevant:
+            status = "NOT_RUN"
+        elif not_run:
             status = "BLOCKED_BY_EVIDENCE" if review_type is ReviewType.EVIDENCE else "NOT_RUN"
-        elif failed:
+        elif material_failed:
             status = "FAIL"
-        elif any(item.outcome is not EvaluationOutcome.PASS for item in relevant):
+        elif non_material_failed:
             status = "PASS_WITH_FINDINGS"
         else:
             status = "PASS"
-        finding_ids = [item.test_id for item in (*failed, *not_run)]
+        finding_ids = [item.test_id for item in (*material_failed, *non_material_failed, *not_run)]
         payload = {
             "review_id": f"{subject.review_id}.{review_type.value.lower()}",
             "correlation_id": subject.correlation_id,
@@ -222,3 +248,23 @@ class ReviewPackageAssembler:
             or suite.workspace_id != subject.workspace_id
         ):
             raise ReviewPackageAssemblyError("REVIEW_SUITE_IDENTITY_MISMATCH")
+
+    @staticmethod
+    def _validate_summary_consistency(
+        suite: EvaluationSuiteResult,
+        summary: RiskEvidenceSummary,
+        strict_readiness: Any,
+    ) -> None:
+        if summary.readiness is not strict_readiness.status:
+            raise ReviewPackageAssemblyError("REVIEW_SUMMARY_READINESS_MISMATCH")
+        if summary.blocking_eval_ids != strict_readiness.blocking_eval_ids:
+            raise ReviewPackageAssemblyError("REVIEW_SUMMARY_BLOCKERS_MISMATCH")
+        if (
+            summary.completion.total_evals != len(suite.case_results)
+            or summary.completion.passed != suite.passed
+            or summary.completion.failed != suite.failed
+            or summary.completion.not_run != suite.not_run
+        ):
+            raise ReviewPackageAssemblyError("REVIEW_SUMMARY_COUNTS_MISMATCH")
+        if not set(suite.material_failure_ids).issubset(summary.blocking_eval_ids):
+            raise ReviewPackageAssemblyError("REVIEW_SUMMARY_MATERIAL_FAILURE_HIDDEN")

@@ -5,6 +5,7 @@ from enum import StrEnum
 from pydantic import BaseModel, ConfigDict, Field
 
 from genesis.evals import (
+    MVP2_H8_REGRESSION_SET,
     AIReadinessAssessment,
     AIReadinessStatus,
     EvaluationArea,
@@ -85,7 +86,7 @@ class RiskEvidenceSummaryBuilder:
             any(token in " ".join(item.evidence.reason_codes) for token in ("STALE", "WEAK"))
             for item in suite.case_results
         )
-        risks = tuple(
+        risks_list = [
             OperationalRisk(
                 severity=self._severity(item.severity),
                 area=item.area,
@@ -95,7 +96,22 @@ class RiskEvidenceSummaryBuilder:
             )
             for item in suite.case_results
             if item.outcome is not EvaluationOutcome.PASS
+        ]
+        result_ids = {item.test_id for item in suite.case_results}
+        area_by_id = {item.eval_case_id: item.area for item in MVP2_H8_REGRESSION_SET.case_refs}
+        omitted_blockers = tuple(
+            item for item in readiness.blocking_eval_ids if item not in result_ids
         )
+        risks_list.extend(
+            OperationalRisk(
+                severity=RiskSeverity.HIGH,
+                area=area_by_id.get(eval_id, EvaluationArea.CONTEXT),
+                summary=f"Required evaluation is missing: {eval_id}.",
+                related_eval_ids=(eval_id,),
+            )
+            for eval_id in omitted_blockers
+        )
+        risks = tuple(risks_list)
         quality_findings = tuple(
             item.summary
             for item in suite.case_results
@@ -116,13 +132,16 @@ class RiskEvidenceSummaryBuilder:
                 passed=suite.passed,
                 failed=suite.failed,
                 not_run=suite.not_run,
-                required_complete=not any(item.required for item in missing),
+                required_complete=(
+                    not any(item.required for item in missing)
+                    and readiness.status is not AIReadinessStatus.INCOMPLETE
+                ),
             ),
             quality_findings=quality_findings,
             risks=risks,
             evidence=EvidenceSummary(
                 total_unique_evidence=len(evidence_ids),
-                missing_required=len(missing),
+                missing_required=len(missing) + len(omitted_blockers),
                 invalid_count=invalid,
                 stale_or_weak_count=weak,
                 source_lineage_complete=not invalid and not missing,
@@ -132,6 +151,7 @@ class RiskEvidenceSummaryBuilder:
                 dict.fromkeys(
                     (
                         *suite.limitations,
+                        *(f"Required evaluation is missing: {item}." for item in omitted_blockers),
                         *(
                             risk.summary
                             for risk in risks

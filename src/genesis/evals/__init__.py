@@ -1,4 +1,6 @@
 from genesis.evals.models import (
+    ContextObservation,
+    DelegationObservation,
     EvaluationArea,
     EvaluationAssertionResult,
     EvaluationCase,
@@ -10,13 +12,18 @@ from genesis.evals.models import (
     EvaluationSubjectSnapshot,
     EvaluationSuiteResult,
     EvaluationTaxonomy,
-    MaterialBehaviorObservation,
+    MemoryObservation,
+    ObservationProof,
+    ResearchObservation,
     RiskBasedTestProfile,
+    RuntimeObservation,
+    SkillObservation,
 )
 from genesis.evals.readiness import (
     AIReadinessAssessment,
     AIReadinessStatus,
     DeterministicReadinessPolicy,
+    RegressionCompleteness,
 )
 from genesis.evals.regression import (
     MVP2_H8_REGRESSION_SET,
@@ -24,12 +31,14 @@ from genesis.evals.regression import (
     RegressionSetProposal,
 )
 from genesis.evals.research import RDSafetyCheck, RDSafetyEvaluation, RDSafetyEvaluator
-from genesis.evals.runner import EvaluationProbe, EvaluationRunner, RegisteredMaterialBehaviorProbe
+from genesis.evals.runner import EvaluationProbe, EvaluationRunner
 
 __all__ = [
     "MVP2_H8_REGRESSION_SET",
     "AIReadinessAssessment",
     "AIReadinessStatus",
+    "ContextObservation",
+    "DelegationObservation",
     "DeterministicReadinessPolicy",
     "EvaluationArea",
     "EvaluationAssertionResult",
@@ -44,12 +53,16 @@ __all__ = [
     "EvaluationSubjectSnapshot",
     "EvaluationSuiteResult",
     "EvaluationTaxonomy",
-    "MaterialBehaviorObservation",
+    "MemoryObservation",
+    "ObservationProof",
     "RDSafetyCheck",
     "RDSafetyEvaluation",
     "RDSafetyEvaluator",
-    "RegisteredMaterialBehaviorProbe",
     "RegressionCaseRef",
+    "RegressionCompleteness",
     "RegressionSetProposal",
+    "ResearchObservation",
     "RiskBasedTestProfile",
+    "RuntimeObservation",
+    "SkillObservation",
 ]
