@@ -26,7 +26,7 @@ from genesis.evals.readiness import (
     RegressionCompleteness,
 )
 from genesis.evals.regression import (
-    MVP2_H8_REGRESSION_SET,
+    CORE_AI_ASSURANCE_REGRESSION_SET,
     RegressionCaseRef,
     RegressionSetProposal,
 )
@@ -34,7 +34,7 @@ from genesis.evals.research import RDSafetyCheck, RDSafetyEvaluation, RDSafetyEv
 from genesis.evals.runner import EvaluationProbe, EvaluationRunner
 
 __all__ = [
-    "MVP2_H8_REGRESSION_SET",
+    "CORE_AI_ASSURANCE_REGRESSION_SET",
     "AIReadinessAssessment",
     "AIReadinessStatus",
     "ContextObservation",

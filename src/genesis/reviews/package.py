@@ -8,7 +8,7 @@ from typing import Any
 
 from genesis.contracts import CanonicalContractCatalog
 from genesis.evals import (
-    MVP2_H8_REGRESSION_SET,
+    CORE_AI_ASSURANCE_REGRESSION_SET,
     AIReadinessStatus,
     DeterministicReadinessPolicy,
     EvaluationArea,
@@ -78,12 +78,12 @@ class ReviewPackageAssembler:
     ) -> dict[str, Any]:
         self._validate_trace(subject, suite, summary)
         if (
-            suite.suite_id != MVP2_H8_REGRESSION_SET.regression_set_id
-            or suite.suite_version != MVP2_H8_REGRESSION_SET.version
+            suite.suite_id != CORE_AI_ASSURANCE_REGRESSION_SET.regression_set_id
+            or suite.suite_version != CORE_AI_ASSURANCE_REGRESSION_SET.version
         ):
             raise ReviewPackageAssemblyError("REVIEW_SUITE_REGRESSION_SET_MISMATCH")
         strict_readiness = DeterministicReadinessPolicy().assess_against(
-            MVP2_H8_REGRESSION_SET, suite
+            CORE_AI_ASSURANCE_REGRESSION_SET, suite
         )
         self._validate_summary_consistency(suite, summary, strict_readiness)
         evidence = self._validated_evidence(subject, suite)

@@ -1,4 +1,4 @@
-"""Independent deterministic H8 safety evaluation of H7 research output."""
+"""Independent deterministic assurance evaluation of research output."""
 
 from __future__ import annotations
 

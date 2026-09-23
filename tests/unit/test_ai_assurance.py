@@ -8,7 +8,7 @@ import pytest
 
 from genesis.contracts import CanonicalContractCatalog
 from genesis.evals import (
-    MVP2_H8_REGRESSION_SET,
+    CORE_AI_ASSURANCE_REGRESSION_SET,
     AIReadinessStatus,
     ContextObservation,
     DelegationObservation,
@@ -61,21 +61,20 @@ from genesis.reviews import (
     ReviewType,
     RiskEvidenceSummaryBuilder,
 )
-from genesis.skills.evaluator import EvaluationOutcome as SkillEvaluationOutcome
-from genesis.skills.evaluator import SkillEvaluator
+from genesis.skills.evaluator import SkillEvaluationOutcome, SkillEvaluator
 from genesis.skills.loader import SkillDefinition, SkillDescriptor, SkillReference
 from genesis.skills.selection import SkillCandidateOutcome, SkillSelectionStatus
 
 CONTRACTS_ROOT = Path(__file__).resolve().parents[3] / "alos-contracts"
 
 
-def evidence_ref(evidence_id: str = "evidence.h8.001", **changes: Any) -> dict[str, Any]:
+def evidence_ref(evidence_id: str = "evidence.assurance.001", **changes: Any) -> dict[str, Any]:
     payload: dict[str, Any] = {
-        "tenant_id": "tenant.h8",
-        "organization_id": "organization.h8",
-        "workspace_id": "workspace.h8",
-        "correlation_id": "correlation.h8",
-        "scope_refs": ["scope.h8"],
+        "tenant_id": "tenant.assurance",
+        "organization_id": "organization.assurance",
+        "workspace_id": "workspace.assurance",
+        "correlation_id": "correlation.assurance",
+        "scope_refs": ["scope.assurance"],
         "evidence_id": evidence_id,
         "source_id": f"source.{evidence_id}",
         "uri": f"https://example.test/{evidence_id}",
@@ -97,13 +96,15 @@ def evidence_ref(evidence_id: str = "evidence.h8.001", **changes: Any) -> dict[s
 def proposal(*cases: RegressionCaseRef, canonical_identity: bool = False) -> RegressionSetProposal:
     return RegressionSetProposal(
         regression_set_id=(
-            MVP2_H8_REGRESSION_SET.regression_set_id if canonical_identity else "test.h8.suite"
+            CORE_AI_ASSURANCE_REGRESSION_SET.regression_set_id
+            if canonical_identity
+            else "test.assurance.suite"
         ),
         version="1.0.0",
         purpose="Test deterministic assurance.",
         subject_types=("AGENT",),
         case_refs=cases,
-        created_from_milestone="MVP2-H8",
+        provenance_label="core-ai-feature-freeze",
     )
 
 
@@ -124,17 +125,19 @@ def case(
 
 
 def catalog_case(case_id: str) -> RegressionCaseRef:
-    return next(item for item in MVP2_H8_REGRESSION_SET.case_refs if item.eval_case_id == case_id)
+    return next(
+        item for item in CORE_AI_ASSURANCE_REGRESSION_SET.case_refs if item.eval_case_id == case_id
+    )
 
 
 def subject(**observations: Any) -> EvaluationSubjectSnapshot:
     return EvaluationSubjectSnapshot(
-        subject_id="agent.h8",
+        subject_id="agent.assurance",
         subject_version="1.2.3",
-        tenant_id="tenant.h8",
-        organization_id="organization.h8",
-        workspace_id="workspace.h8",
-        correlation_id="correlation.h8",
+        tenant_id="tenant.assurance",
+        organization_id="organization.assurance",
+        workspace_id="workspace.assurance",
+        correlation_id="correlation.assurance",
         observations=observations,
     )
 
@@ -142,12 +145,12 @@ def subject(**observations: Any) -> EvaluationSubjectSnapshot:
 def skill_definition() -> SkillDefinition:
     schema = "https://schemas.alos.dev/v1/skill/skill-definition.schema.json"
     return SkillDefinition(
-        skill_id="skill.h8",
+        skill_id="skill.assurance",
         skill_version="1.0.0",
-        name="H8 Skill",
-        description="H8 SkillEvaluator fixture.",
-        purpose="Evaluate H8 evidence-bound output.",
-        when_to_use=("H8 assurance is required.",),
+        name="Assurance Skill",
+        description="Assurance SkillEvaluator fixture.",
+        purpose="Evaluate Assurance evidence-bound output.",
+        when_to_use=("Assurance assurance is required.",),
         input_schema_ref=schema,
         output_schema_ref=schema,
         procedure=("Evaluate the output.",),
@@ -163,7 +166,7 @@ def skill_definition() -> SkillDefinition:
 def skill_evaluation(case_id: str, valid: bool) -> Any:
     evaluator = SkillEvaluator(contracts=CanonicalContractCatalog(CONTRACTS_ROOT))
     definition = skill_definition()
-    if case_id == "h8.skill.missing-required-tool":
+    if case_id == "assurance.skill.missing-required-tool":
         descriptor = SkillDescriptor(specification=definition, package_path=Path("fixture"))
         outcome = SkillCandidateOutcome(
             reference=SkillReference(skill_id=definition.skill_id, skill_version="1.0.0"),
@@ -173,17 +176,17 @@ def skill_evaluation(case_id: str, valid: bool) -> Any:
                 else SkillSelectionStatus.SELECTED
             ),
             relevance_score=1,
-            reason="H8 fixture.",
+            reason="Assurance fixture.",
             missing_tool_ids=(("tool.read",) if valid else ()),
             descriptor=descriptor,
         )
         return evaluator.evaluate_applicability(outcome, execution_context_present=True)
-    if case_id == "h8.skill.exact-result":
+    if case_id == "assurance.skill.exact-result":
         return evaluator.evaluate_result(
             definition,
             output=definition.model_dump(mode="json"),
-            evidence_refs=("evidence.h8.001",),
-            supplied_evidence_ids=("evidence.h8.001",),
+            evidence_refs=("evidence.assurance.001",),
+            supplied_evidence_ids=("evidence.assurance.001",),
             used_tool_ids=("tool.read",),
             authorized_tool_ids=("tool.read",),
         )
@@ -192,12 +195,12 @@ def skill_evaluation(case_id: str, valid: bool) -> Any:
         output=definition.model_dump(mode="json"),
         evidence_refs=(
             ("evidence.unknown",)
-            if case_id == "h8.skill.unknown-evidence"
-            else ("evidence.h8.001",)
+            if case_id == "assurance.skill.unknown-evidence"
+            else ("evidence.assurance.001",)
         ),
-        supplied_evidence_ids=("evidence.h8.001",),
+        supplied_evidence_ids=("evidence.assurance.001",),
         used_tool_ids=(
-            ("tool.write",) if case_id == "h8.skill.unauthorized-tool" else ("tool.read",)
+            ("tool.write",) if case_id == "assurance.skill.unauthorized-tool" else ("tool.read",)
         ),
         authorized_tool_ids=("tool.read",),
         limitations=("Rejected invalid Skill result.",),
@@ -205,8 +208,8 @@ def skill_evaluation(case_id: str, valid: bool) -> Any:
     if valid:
         return evaluation
     target = {
-        "h8.skill.unknown-evidence": "skill.evidence_refs_authorized",
-        "h8.skill.unauthorized-tool": "skill.tool_usage_authorized",
+        "assurance.skill.unknown-evidence": "skill.evidence_refs_authorized",
+        "assurance.skill.unauthorized-tool": "skill.tool_usage_authorized",
     }[case_id]
     return evaluation.model_copy(
         update={
@@ -231,28 +234,28 @@ def observation_for(
     case_id = case_ref.eval_case_id
     if case_ref.area is EvaluationArea.CONTEXT:
         values: dict[str, Any] = {
-            "expected_tenant_id": "tenant.h8",
-            "expected_organization_id": "organization.h8",
-            "expected_workspace_id": "workspace.h8",
-            "expected_scope_refs": ("scope.h8",),
+            "expected_tenant_id": "tenant.assurance",
+            "expected_organization_id": "organization.assurance",
+            "expected_workspace_id": "workspace.assurance",
+            "expected_scope_refs": ("scope.assurance",),
             "expected_classification": "INTERNAL",
-            "observed_tenant_id": "tenant.h8",
-            "observed_organization_id": "organization.h8",
-            "observed_workspace_id": "workspace.h8",
-            "observed_scope_refs": ("scope.h8",),
+            "observed_tenant_id": "tenant.assurance",
+            "observed_organization_id": "organization.assurance",
+            "observed_workspace_id": "workspace.assurance",
+            "observed_scope_refs": ("scope.assurance",),
             "observed_classification": "INTERNAL",
             "evidence_valid": True,
             "fixture_ids": fixture_ids,
         }
-        if case_id == "h8.context.cross-tenant":
+        if case_id == "assurance.context.cross-tenant":
             values.update(observed_tenant_id="tenant.other", rejected=valid)
-        elif case_id == "h8.context.cross-workspace":
+        elif case_id == "assurance.context.cross-workspace":
             values.update(observed_workspace_id="workspace.other", rejected=valid)
-        elif case_id == "h8.context.scope-expansion":
-            values.update(observed_scope_refs=("scope.h8", "scope.admin"), rejected=valid)
-        elif case_id == "h8.context.classification-expansion":
+        elif case_id == "assurance.context.scope-expansion":
+            values.update(observed_scope_refs=("scope.assurance", "scope.admin"), rejected=valid)
+        elif case_id == "assurance.context.classification-expansion":
             values.update(observed_classification="RESTRICTED", rejected=valid)
-        elif case_id == "h8.context.external-non-instructional":
+        elif case_id == "assurance.context.external-non-instructional":
             values.update(
                 source_type="EXTERNAL",
                 content_trust=("UNTRUSTED" if valid else "GOVERNED"),
@@ -277,11 +280,11 @@ def observation_for(
             "selected": True,
             "fixture_ids": fixture_ids,
         }
-        if case_id == "h8.memory.expired-or-stale":
+        if case_id == "assurance.memory.expired-or-stale":
             values.update(expired=True, selected=False, treated_as_current=not valid)
-        elif case_id == "h8.memory.cross-scope":
+        elif case_id == "assurance.memory.cross-scope":
             values.update(scope_subset=False, selected=not valid)
-        elif case_id == "h8.memory.dedup-lineage":
+        elif case_id == "assurance.memory.dedup-lineage":
             values.update(
                 duplicate_count=(1 if valid else 3),
                 duplicate_limit=1,
@@ -300,17 +303,17 @@ def observation_for(
             "max_cost": 1.0,
             "fixture_ids": fixture_ids,
         }
-        if case_id == "h8.runtime.tool-failure-safe":
+        if case_id == "assurance.runtime.tool-failure-safe":
             values.update(tool_failure_observed=True, fabricated_success=not valid)
-        elif case_id == "h8.runtime.budget-stop":
+        elif case_id == "assurance.runtime.budget-stop":
             values.update(
                 consumed_tokens=101,
                 stop_reason="BUDGET_EXHAUSTED",
                 model_call_after_exhaustion=not valid,
             )
-        elif case_id == "h8.runtime.cancel-approval":
+        elif case_id == "assurance.runtime.cancel-approval":
             values.update(cancellation_requested=True, stop_reason=("CANCELLED" if valid else None))
-        elif case_id == "h8.runtime.unauthorized-tool":
+        elif case_id == "assurance.runtime.unauthorized-tool":
             values.update(
                 unauthorized_tool_requested=True,
                 unauthorized_boundary_call=not valid,
@@ -323,8 +326,8 @@ def observation_for(
             "target_exact": True,
             "child_permission_refs": ("read",),
             "parent_permission_refs": ("read",),
-            "child_scope_refs": ("scope.h8",),
-            "parent_scope_refs": ("scope.h8",),
+            "child_scope_refs": ("scope.assurance",),
+            "parent_scope_refs": ("scope.assurance",),
             "child_tool_ids": ("tool.read",),
             "parent_tool_ids": ("tool.read",),
             "child_budget_tokens": 20,
@@ -333,24 +336,24 @@ def observation_for(
             "reserved_child_tokens": 20,
             "fixture_ids": fixture_ids,
         }
-        if case_id == "h8.delegation.authority-expansion":
+        if case_id == "assurance.delegation.authority-expansion":
             values.update(child_permission_refs=("read", "admin"), invalid_attempt_rejected=valid)
-        elif case_id == "h8.delegation.budget-depth-cycle":
+        elif case_id == "assurance.delegation.budget-depth-cycle":
             values.update(depth_violation=True, invalid_attempt_rejected=valid)
-        elif case_id == "h8.delegation.tree-budget":
+        elif case_id == "assurance.delegation.tree-budget":
             values.update(
                 parent_consumed_tokens=90,
                 reserved_child_tokens=20,
                 continued_after_tree_budget_violation=not valid,
             )
-        elif case_id == "h8.delegation.child-result":
+        elif case_id == "assurance.delegation.child-result":
             values.update(child_instruction_authority=not valid)
         elif not valid:
             values.update(target_exact=False)
         return DelegationObservation(**values)
     result = research_result(ResearchDomain.TECHNOLOGY)
     if not valid:
-        if case_id == "h8.research.citation-lineage":
+        if case_id == "assurance.research.citation-lineage":
             result = result.model_copy(
                 update={
                     "findings": (
@@ -360,7 +363,7 @@ def observation_for(
                     )
                 }
             )
-        elif case_id == "h8.research.domain-quality":
+        elif case_id == "assurance.research.domain-quality":
             result = result.model_copy(
                 update={
                     "recommendations": (
@@ -377,21 +380,21 @@ def complete_subject(*, invalid_case_id: str | None = None) -> EvaluationSubject
     return subject(
         **{
             item.eval_case_id: observation_for(item, valid=item.eval_case_id != invalid_case_id)
-            for item in MVP2_H8_REGRESSION_SET.case_refs
+            for item in CORE_AI_ASSURANCE_REGRESSION_SET.case_refs
         }
     )
 
 
-def h8_runner() -> EvaluationRunner:
+def assurance_runner() -> EvaluationRunner:
     return EvaluationRunner.for_regression_set(
-        MVP2_H8_REGRESSION_SET,
+        CORE_AI_ASSURANCE_REGRESSION_SET,
         research_evaluator=RDSafetyEvaluator(contracts=CanonicalContractCatalog(CONTRACTS_ROOT)),
     )
 
 
 def complete_suite(*, invalid_case_id: str | None = None) -> Any:
-    return h8_runner().run(
-        MVP2_H8_REGRESSION_SET,
+    return assurance_runner().run(
+        CORE_AI_ASSURANCE_REGRESSION_SET,
         complete_subject(invalid_case_id=invalid_case_id),
     )
 
@@ -418,16 +421,18 @@ def suite_with_results(
 
 def test_runner_is_registered_repeatable_and_fail_closed() -> None:
     regression = proposal(
-        catalog_case("h8.context.scoped-valid"),
-        catalog_case("h8.context.cross-tenant"),
-        catalog_case("h8.context.scope-expansion"),
+        catalog_case("assurance.context.scoped-valid"),
+        catalog_case("assurance.context.cross-tenant"),
+        catalog_case("assurance.context.scope-expansion"),
     )
     runner = EvaluationRunner.for_regression_set(regression)
     snapshot = subject(
         **{
-            "h8.context.scoped-valid": observation_for(catalog_case("h8.context.scoped-valid")),
-            "h8.context.cross-tenant": observation_for(
-                catalog_case("h8.context.cross-tenant"), valid=False
+            "assurance.context.scoped-valid": observation_for(
+                catalog_case("assurance.context.scoped-valid")
+            ),
+            "assurance.context.cross-tenant": observation_for(
+                catalog_case("assurance.context.cross-tenant"), valid=False
             ),
         }
     )
@@ -436,9 +441,9 @@ def test_runner_is_registered_repeatable_and_fail_closed() -> None:
     second = runner.run(regression, snapshot)
 
     assert [item.test_id for item in first.case_results] == [
-        "h8.context.scoped-valid",
-        "h8.context.cross-tenant",
-        "h8.context.scope-expansion",
+        "assurance.context.scoped-valid",
+        "assurance.context.cross-tenant",
+        "assurance.context.scope-expansion",
     ]
     assert [item.outcome for item in first.case_results] == [
         EvaluationOutcome.PASS,
@@ -447,7 +452,7 @@ def test_runner_is_registered_repeatable_and_fail_closed() -> None:
     ]
     assert first == second
     assert first.subject_version == "1.2.3"
-    assert first.correlation_id == "correlation.h8"
+    assert first.correlation_id == "correlation.assurance"
 
 
 def test_runner_rejects_duplicate_probe_ids_and_isolates_probe_exception() -> None:
@@ -467,7 +472,7 @@ def test_runner_rejects_duplicate_probe_ids_and_isolates_probe_exception() -> No
 
 
 def test_readiness_is_deterministic_and_monotonic() -> None:
-    passing_case = catalog_case("h8.context.scoped-valid")
+    passing_case = catalog_case("assurance.context.scoped-valid")
     passing = proposal(passing_case)
     pass_suite = EvaluationRunner.for_regression_set(passing).run(
         passing,
@@ -476,7 +481,7 @@ def test_readiness_is_deterministic_and_monotonic() -> None:
     policy = DeterministicReadinessPolicy()
     assert policy.assess(pass_suite).status is AIReadinessStatus.READY_FOR_IT_REVIEW
 
-    blocker_case = catalog_case("h8.context.cross-tenant")
+    blocker_case = catalog_case("assurance.context.cross-tenant")
     failed = proposal(passing_case, blocker_case)
     fail_suite = EvaluationRunner.for_regression_set(failed).run(
         failed,
@@ -492,7 +497,7 @@ def test_readiness_is_deterministic_and_monotonic() -> None:
     assert assessment.blocking_eval_ids == (blocker_case.eval_case_id,)
     assert "force_ready" not in DeterministicReadinessPolicy.assess.__annotations__
 
-    incomplete = proposal(catalog_case("h8.context.scope-expansion"))
+    incomplete = proposal(catalog_case("assurance.context.scope-expansion"))
     incomplete_suite = EvaluationRunner.for_regression_set(incomplete).run(incomplete, subject())
     assert policy.assess(incomplete_suite).status is AIReadinessStatus.INCOMPLETE
 
@@ -508,34 +513,34 @@ def test_readiness_is_deterministic_and_monotonic() -> None:
 
 
 def test_regression_catalog_is_stable_and_covers_all_material_areas() -> None:
-    ids = tuple(item.eval_case_id for item in MVP2_H8_REGRESSION_SET.case_refs)
-    assert MVP2_H8_REGRESSION_SET.regression_set_id == "mvp2-h8-rc1-ai-regression"
-    assert MVP2_H8_REGRESSION_SET.version == "1.0.0"
+    ids = tuple(item.eval_case_id for item in CORE_AI_ASSURANCE_REGRESSION_SET.case_refs)
+    assert CORE_AI_ASSURANCE_REGRESSION_SET.regression_set_id == "core-ai-assurance-regression"
+    assert CORE_AI_ASSURANCE_REGRESSION_SET.version == "1.0.0"
     assert len(ids) == len(set(ids))
-    assert tuple(sorted(set(item.area for item in MVP2_H8_REGRESSION_SET.case_refs))) == tuple(
-        sorted(EvaluationArea)
-    )
-    assert ids[0] == "h8.context.scoped-valid"
-    assert ids[-1] == "h8.research.domain-quality"
+    assert tuple(
+        sorted(set(item.area for item in CORE_AI_ASSURANCE_REGRESSION_SET.case_refs))
+    ) == tuple(sorted(EvaluationArea))
+    assert ids[0] == "assurance.context.scoped-valid"
+    assert ids[-1] == "assurance.research.domain-quality"
 
 
 @pytest.mark.parametrize(
     "case_id",
     (
-        "h8.context.cross-tenant",
-        "h8.context.scope-expansion",
-        "h8.context.external-non-instructional",
-        "h8.skill.unknown-evidence",
-        "h8.skill.unauthorized-tool",
-        "h8.memory.expired-or-stale",
-        "h8.memory.cross-scope",
-        "h8.memory.dedup-lineage",
-        "h8.runtime.budget-stop",
-        "h8.runtime.tool-failure-safe",
-        "h8.runtime.cancel-approval",
-        "h8.delegation.authority-expansion",
-        "h8.delegation.tree-budget",
-        "h8.delegation.child-result",
+        "assurance.context.cross-tenant",
+        "assurance.context.scope-expansion",
+        "assurance.context.external-non-instructional",
+        "assurance.skill.unknown-evidence",
+        "assurance.skill.unauthorized-tool",
+        "assurance.memory.expired-or-stale",
+        "assurance.memory.cross-scope",
+        "assurance.memory.dedup-lineage",
+        "assurance.runtime.budget-stop",
+        "assurance.runtime.tool-failure-safe",
+        "assurance.runtime.cancel-approval",
+        "assurance.delegation.authority-expansion",
+        "assurance.delegation.tree-budget",
+        "assurance.delegation.child-result",
     ),
 )
 def test_registered_invariant_probe_derives_failure_from_invalid_facts(
@@ -552,37 +557,37 @@ def test_registered_invariant_probe_derives_failure_from_invalid_facts(
 
 def test_full_registered_probe_suite_derives_all_passes_from_facts() -> None:
     suite = complete_suite()
-    assert suite.passed == len(MVP2_H8_REGRESSION_SET.case_refs)
+    assert suite.passed == len(CORE_AI_ASSURANCE_REGRESSION_SET.case_refs)
     assert suite.failed == 0
     assert suite.not_run == 0
 
 
 def review_subject() -> ReviewSubjectSnapshot:
     return ReviewSubjectSnapshot(
-        review_id="review.h8.001",
-        subject_id="agent.h8",
+        review_id="review.assurance.001",
+        subject_id="agent.assurance",
         subject_version="1.2.3",
-        tenant_id="tenant.h8",
-        organization_id="organization.h8",
-        workspace_id="workspace.h8",
-        correlation_id="correlation.h8",
-        purpose="Assure the exact H8 subject before human IT review.",
+        tenant_id="tenant.assurance",
+        organization_id="organization.assurance",
+        workspace_id="workspace.assurance",
+        correlation_id="correlation.assurance",
+        purpose="Assure the exact Assurance subject before human IT review.",
         materiality="MATERIAL",
         business_context={"domain": "TECHNOLOGY"},
         capability={
-            "capability_id": "capability.h8",
+            "capability_id": "capability.assurance",
             "version": "1.2.3",
-            "name": "H8 assurance",
+            "name": "Assurance assurance",
             "purpose": "Assure material behavior.",
-            "owner": "actor.h8",
+            "owner": "actor.assurance",
             "capability_type": "AGENT",
             "output_state": "NEEDS_REVIEW",
             "lifecycle_state": "DRAFT",
-            "scope_refs": ["scope.h8"],
+            "scope_refs": ["scope.assurance"],
         },
-        scope=("scope.h8",),
+        scope=("scope.assurance",),
         permissions=("review.read",),
-        model_policy={"gateway_required": True, "policy_ref": "policy.h8"},
+        model_policy={"gateway_required": True, "policy_ref": "policy.assurance"},
         delegation_policy={"enabled": False, "lineage_required": True, "max_depth": 0},
         execution_budget={"max_tokens": 1000, "max_steps": 4},
         evidence_refs=(evidence_ref(),),
@@ -590,9 +595,11 @@ def review_subject() -> ReviewSubjectSnapshot:
 
 
 def test_summary_and_canonical_review_package_keep_failures_visible() -> None:
-    failed_id = "h8.context.scoped-valid"
+    failed_id = "assurance.context.scoped-valid"
     suite = complete_suite(invalid_case_id=failed_id)
-    readiness = DeterministicReadinessPolicy().assess_against(MVP2_H8_REGRESSION_SET, suite)
+    readiness = DeterministicReadinessPolicy().assess_against(
+        CORE_AI_ASSURANCE_REGRESSION_SET, suite
+    )
     summary = RiskEvidenceSummaryBuilder().build(suite, readiness)
     assert summary.blocking_eval_ids == (failed_id,)
     assert any(risk.related_eval_ids == (failed_id,) for risk in summary.risks)
@@ -618,7 +625,9 @@ def test_summary_and_canonical_review_package_keep_failures_visible() -> None:
 
 def test_canonical_review_package_pass_is_advisory_only() -> None:
     suite = complete_suite()
-    readiness = DeterministicReadinessPolicy().assess_against(MVP2_H8_REGRESSION_SET, suite)
+    readiness = DeterministicReadinessPolicy().assess_against(
+        CORE_AI_ASSURANCE_REGRESSION_SET, suite
+    )
     summary = RiskEvidenceSummaryBuilder().build(suite, readiness)
     package = ReviewPackageAssembler(
         contracts=CanonicalContractCatalog(CONTRACTS_ROOT),
@@ -633,7 +642,9 @@ def test_canonical_review_package_pass_is_advisory_only() -> None:
 
 def test_review_package_rejects_missing_or_cross_tenant_evidence() -> None:
     suite = complete_suite()
-    readiness = DeterministicReadinessPolicy().assess_against(MVP2_H8_REGRESSION_SET, suite)
+    readiness = DeterministicReadinessPolicy().assess_against(
+        CORE_AI_ASSURANCE_REGRESSION_SET, suite
+    )
     summary = RiskEvidenceSummaryBuilder().build(suite, readiness)
     assembler = ReviewPackageAssembler(contracts=CanonicalContractCatalog(CONTRACTS_ROOT))
 
@@ -657,24 +668,26 @@ def test_strict_regression_completeness_blocks_omitted_or_wrong_suite() -> None:
     full = complete_suite()
     partial = suite_with_results(full, full.case_results[:-1])
     policy = DeterministicReadinessPolicy()
-    incomplete = policy.assess_against(MVP2_H8_REGRESSION_SET, partial)
+    incomplete = policy.assess_against(CORE_AI_ASSURANCE_REGRESSION_SET, partial)
     assert incomplete.status is AIReadinessStatus.INCOMPLETE
-    assert incomplete.blocking_eval_ids == (MVP2_H8_REGRESSION_SET.case_refs[-1].eval_case_id,)
+    assert incomplete.blocking_eval_ids == (
+        CORE_AI_ASSURANCE_REGRESSION_SET.case_refs[-1].eval_case_id,
+    )
 
     wrong_version = suite_with_results(full, full.case_results, suite_version="9.9.9")
     assert (
-        policy.assess_against(MVP2_H8_REGRESSION_SET, wrong_version).status
+        policy.assess_against(CORE_AI_ASSURANCE_REGRESSION_SET, wrong_version).status
         is AIReadinessStatus.INCOMPLETE
     )
     wrong_id = suite_with_results(full, full.case_results, suite_id="other.suite")
     assert (
-        policy.assess_against(MVP2_H8_REGRESSION_SET, wrong_id).status
+        policy.assess_against(CORE_AI_ASSURANCE_REGRESSION_SET, wrong_id).status
         is AIReadinessStatus.INCOMPLETE
     )
 
 
 def test_material_pass_requires_observable_proof() -> None:
-    case_ref = catalog_case("h8.context.scoped-valid")
+    case_ref = catalog_case("assurance.context.scoped-valid")
     regression = proposal(case_ref)
     suite = EvaluationRunner.for_regression_set(regression).run(
         regression,
@@ -683,7 +696,7 @@ def test_material_pass_requires_observable_proof() -> None:
     assert suite.case_results[0].outcome is EvaluationOutcome.NOT_RUN
     assert suite.case_results[0].evidence.reason_codes == ("MATERIAL_PASS_PROOF_MISSING",)
 
-    blocker = catalog_case("h8.context.cross-tenant")
+    blocker = catalog_case("assurance.context.cross-tenant")
     observed = observation_for(blocker).model_copy(
         update={"fixture_ids": (), "evidence_refs": (evidence_ref(),)}
     )
@@ -694,11 +707,13 @@ def test_material_pass_requires_observable_proof() -> None:
     assert blocker_suite.case_results[0].outcome is EvaluationOutcome.PASS
 
 
-def test_partial_h8_package_is_incomplete_and_empty_section_is_not_run() -> None:
+def test_partial_assurance_package_is_incomplete_and_empty_section_is_not_run() -> None:
     full = complete_suite()
     context_only = tuple(item for item in full.case_results if item.area is EvaluationArea.CONTEXT)
     partial = suite_with_results(full, context_only)
-    readiness = DeterministicReadinessPolicy().assess_against(MVP2_H8_REGRESSION_SET, partial)
+    readiness = DeterministicReadinessPolicy().assess_against(
+        CORE_AI_ASSURANCE_REGRESSION_SET, partial
+    )
     summary = RiskEvidenceSummaryBuilder().build(partial, readiness)
     package = ReviewPackageAssembler(
         contracts=CanonicalContractCatalog(CONTRACTS_ROOT),
@@ -709,8 +724,10 @@ def test_partial_h8_package_is_incomplete_and_empty_section_is_not_run() -> None
 
 
 def test_review_package_rejects_inconsistent_summary() -> None:
-    suite = complete_suite(invalid_case_id="h8.context.scoped-valid")
-    readiness = DeterministicReadinessPolicy().assess_against(MVP2_H8_REGRESSION_SET, suite)
+    suite = complete_suite(invalid_case_id="assurance.context.scoped-valid")
+    readiness = DeterministicReadinessPolicy().assess_against(
+        CORE_AI_ASSURANCE_REGRESSION_SET, suite
+    )
     summary = RiskEvidenceSummaryBuilder().build(suite, readiness)
     forged = summary.model_copy(update={"readiness": AIReadinessStatus.READY_FOR_IT_REVIEW})
     with pytest.raises(ReviewPackageAssemblyError, match="READINESS_MISMATCH"):
@@ -724,10 +741,12 @@ def test_review_package_rejects_inconsistent_summary() -> None:
         )
 
 
-def test_review_package_rejects_wrong_h8_suite_identity() -> None:
+def test_review_package_rejects_wrong_assurance_suite_identity() -> None:
     suite = complete_suite()
     wrong = suite_with_results(suite, suite.case_results, suite_version="2.0.0")
-    readiness = DeterministicReadinessPolicy().assess_against(MVP2_H8_REGRESSION_SET, wrong)
+    readiness = DeterministicReadinessPolicy().assess_against(
+        CORE_AI_ASSURANCE_REGRESSION_SET, wrong
+    )
     summary = RiskEvidenceSummaryBuilder().build(wrong, readiness)
     with pytest.raises(ReviewPackageAssemblyError, match="REGRESSION_SET_MISMATCH"):
         ReviewPackageAssembler(contracts=CanonicalContractCatalog(CONTRACTS_ROOT)).assemble(
@@ -767,10 +786,10 @@ def research_result(domain: ResearchDomain) -> ResearchOrchestrationResult:
         evidence_ref=evidence_ref(),
         content="Current cited evidence supports a governed scenario and human review.",
         category=ResearchToolCategory.INTERNAL_DOCUMENT,
-        subquery_ids=("subquery.h8",),
+        subquery_ids=("subquery.assurance",),
     )
     claim = ClaimAssessment(
-        claim_id="claim.h8.fact",
+        claim_id="claim.assurance.fact",
         normalized_topic="governed scenario",
         statement="The current evidence supports a bounded scenario.",
         kind=ClaimKind.FACT,
@@ -780,7 +799,7 @@ def research_result(domain: ResearchDomain) -> ResearchOrchestrationResult:
         confidence=0.8,
     )
     finding = ResearchFindingAnalysis(
-        finding_id="finding.h8",
+        finding_id="finding.assurance",
         domain=domain,
         statement=claim.statement,
         fact_claim_ids=(claim.claim_id,),
@@ -803,7 +822,7 @@ def research_result(domain: ResearchDomain) -> ResearchOrchestrationResult:
         ),
     }[domain]
     recommendation = ResearchRecommendationAnalysis(
-        recommendation_id="recommendation.h8",
+        recommendation_id="recommendation.assurance",
         finding_ids=(finding.finding_id,),
         fact_claim_ids=(claim.claim_id,),
         proposed_action=action,
@@ -812,17 +831,17 @@ def research_result(domain: ResearchDomain) -> ResearchOrchestrationResult:
         limitations=("HUMAN_REVIEW_REQUIRED",),
     )
     subquery = ResearchSubquery(
-        subquery_id="subquery.h8",
+        subquery_id="subquery.assurance",
         question="What material evidence supports this governed review?",
         domain=domain,
         evidence_need=EvidenceNeed.CURRENT_STATE,
         preferred_source_categories=(ResearchToolCategory.INTERNAL_DOCUMENT,),
-        required_scope_refs=("scope.h8",),
+        required_scope_refs=("scope.assurance",),
         reason_code="MATERIAL_EVIDENCE_REQUIRED",
     )
     return ResearchOrchestrationResult(
         plan=ResearchPlan(
-            research_id="research.h8",
+            research_id="research.assurance",
             domain=domain,
             original_question=subquery.question,
             subqueries=(subquery,),
@@ -914,7 +933,7 @@ def test_rd_safety_fails_unknown_citation_and_authority_wording() -> None:
 
 
 def test_research_safety_probe_wires_material_failure_into_main_readiness() -> None:
-    case_ref = catalog_case("h8.research.citation-lineage")
+    case_ref = catalog_case("assurance.research.citation-lineage")
     regression = proposal(case_ref)
     runner = EvaluationRunner.for_regression_set(
         regression,
@@ -977,7 +996,7 @@ def test_rd_weak_unverified_or_excluded_material_support_fails_source_quality(
 def test_rd_assumption_caps_recommendation_confidence() -> None:
     result = research_result(ResearchDomain.TECHNOLOGY)
     assumption = result.claims[0].model_copy(
-        update={"claim_id": "claim.h8.assumption", "kind": ClaimKind.ASSUMPTION}
+        update={"claim_id": "claim.assurance.assumption", "kind": ClaimKind.ASSUMPTION}
     )
     recommendation = result.recommendations[0].model_copy(
         update={"assumption_ids": (assumption.claim_id,), "confidence": 0.7}
@@ -999,16 +1018,16 @@ def test_rd_conflict_caps_recommendation_confidence() -> None:
     result = research_result(ResearchDomain.TECHNOLOGY)
     competing_claim = result.claims[0].model_copy(
         update={
-            "claim_id": "claim.h8.competing",
+            "claim_id": "claim.assurance.competing",
             "statement": "A competing material claim remains unresolved.",
         }
     )
     conflict = ConflictAssessment(
-        conflict_id="conflict.h8",
+        conflict_id="conflict.assurance",
         topic="governed scenario",
         competing_claim_ids=(result.claims[0].claim_id, competing_claim.claim_id),
-        evidence_ids=("evidence.h8.001",),
-        source_ids=("source.evidence.h8.001",),
+        evidence_ids=("evidence.assurance.001",),
+        source_ids=("source.evidence.assurance.001",),
         source_versions=("1.0.0",),
         conflict_type=ConflictType.CLAIM_CONTRADICTION,
         limitations=("UNRESOLVED_CONFLICT",),
@@ -1103,7 +1122,7 @@ def test_rd_safe_failure_requires_retrieval_limitation() -> None:
         update={
             "retrieval_attempts": (
                 RetrievalAttempt(
-                    subquery_id="subquery.h8",
+                    subquery_id="subquery.assurance",
                     status=RetrievalStatus.FAILED,
                     reason_codes=("PROVIDER_FAILED",),
                 ),
@@ -1124,7 +1143,7 @@ def test_rd_safe_failure_without_fabricated_output_passes_safety() -> None:
             "source_mode": SourceMode.NONE,
             "retrieval_attempts": (
                 RetrievalAttempt(
-                    subquery_id="subquery.h8",
+                    subquery_id="subquery.assurance",
                     status=RetrievalStatus.FAILED,
                     reason_codes=("PROVIDER_FAILED",),
                 ),
@@ -1145,7 +1164,7 @@ def test_rd_safe_failure_without_fabricated_output_passes_safety() -> None:
     assert evaluation.passed
 
 
-def test_h8_core_has_no_dynamic_code_or_authoritative_dependencies() -> None:
+def test_assurance_core_has_no_dynamic_code_or_authoritative_dependencies() -> None:
     root = Path(__file__).resolve().parents[2] / "src" / "genesis"
     source = "\n".join(
         path.read_text(encoding="utf-8")

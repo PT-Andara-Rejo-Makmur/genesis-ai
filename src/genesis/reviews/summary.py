@@ -5,7 +5,7 @@ from enum import StrEnum
 from pydantic import BaseModel, ConfigDict, Field
 
 from genesis.evals import (
-    MVP2_H8_REGRESSION_SET,
+    CORE_AI_ASSURANCE_REGRESSION_SET,
     AIReadinessAssessment,
     AIReadinessStatus,
     EvaluationArea,
@@ -98,7 +98,9 @@ class RiskEvidenceSummaryBuilder:
             if item.outcome is not EvaluationOutcome.PASS
         ]
         result_ids = {item.test_id for item in suite.case_results}
-        area_by_id = {item.eval_case_id: item.area for item in MVP2_H8_REGRESSION_SET.case_refs}
+        area_by_id = {
+            item.eval_case_id: item.area for item in CORE_AI_ASSURANCE_REGRESSION_SET.case_refs
+        }
         omitted_blockers = tuple(
             item for item in readiness.blocking_eval_ids if item not in result_ids
         )

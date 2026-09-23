@@ -1,4 +1,4 @@
-"""Deterministic execution of registered, typed H8 evaluation probes."""
+"""Deterministic execution of registered, typed assurance probes."""
 
 from __future__ import annotations
 

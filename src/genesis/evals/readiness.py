@@ -86,7 +86,7 @@ class DeterministicReadinessPolicy:
         if not completeness.complete:
             blockers = completeness.missing_required_ids
             if not blockers and not completeness.suite_identity_matches:
-                blockers = ("H8_REGRESSION_SUITE_IDENTITY_MISMATCH",)
+                blockers = ("REGRESSION_SUITE_IDENTITY_MISMATCH",)
             if not blockers and completeness.unexpected_ids:
                 blockers = completeness.unexpected_ids
             if not blockers and completeness.mismatched_case_ids:
