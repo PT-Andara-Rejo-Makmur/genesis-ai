@@ -29,6 +29,14 @@ at most twelve evidence items and 12,000 content characters. All model calls
 use strict JSON projections, report usage, and receive only bounded operational
 data. No hidden chain of thought is requested or persisted.
 
+Canonical `ExecutionBudget.max_tokens` is optional. Its absence means no
+canonical token-specific ceiling was supplied, not zero available tokens. H7
+therefore applies one finite internal 4,000-token ceiling across planning, claim
+extraction, and recommendation synthesis. An explicit canonical `max_tokens`
+always replaces that default with the narrower/authoritative total. Per-call
+caps remain 1,000, 1,500, and 1,200 tokens respectively, and cumulative usage
+is never reset between stages.
+
 ## Authority and retrieval
 
 `ResearchEvidenceProvider` is a port. Its implementation is owned by the caller

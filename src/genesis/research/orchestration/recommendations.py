@@ -12,6 +12,10 @@ from genesis.model_gateway.interfaces import ModelGateway
 from genesis.model_gateway.types import ModelRequest
 from genesis.research.domains import domain_profile
 from genesis.research.models import ResearchDomain
+from genesis.research.orchestration.budget import (
+    effective_model_token_limit,
+    remaining_model_tokens,
+)
 from genesis.research.orchestration.models import (
     ClaimAssessment,
     ClaimKind,
@@ -88,7 +92,7 @@ class ResearchRecommendationSynthesizer:
         budget: ExecutionBudget,
         prior_usage: ModelCallUsage,
     ) -> SynthesizedRecommendations:
-        remaining_tokens = max(0, (budget.max_tokens or 0) - prior_usage.total_tokens)
+        remaining_tokens = remaining_model_tokens(budget, prior_usage)
         remaining_cost = (
             None
             if budget.max_cost is None
@@ -197,7 +201,7 @@ class ResearchRecommendationSynthesizer:
             route_ids=(response.route_id,),
         )
         combined = prior_usage.add(usage)
-        if combined.total_tokens > (budget.max_tokens or 0) or (
+        if combined.total_tokens > effective_model_token_limit(budget) or (
             budget.max_cost is not None and combined.estimated_cost > budget.max_cost
         ):
             raise ResearchOrchestrationFailure(

@@ -14,6 +14,7 @@ from genesis.research.decision import ResearchRisk
 from genesis.research.engine import ResearchEngine
 from genesis.research.models import ResearchDomain
 from genesis.research.orchestration import (
+    H7_DEFAULT_MODEL_TOKEN_BUDGET,
     ClaimAssessment,
     ClaimComparisonIntelligence,
     ClaimKind,
@@ -1227,6 +1228,143 @@ async def test_recommendation_budget_exhaustion_skips_third_model_call() -> None
     assert result.findings
     assert result.recommendations == ()
     assert "RECOMMENDATION_MODEL_BUDGET_EXHAUSTED" in result.limitations
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "execution_budget",
+    (
+        {"max_cost": 5},
+        {"max_steps": 3},
+    ),
+)
+async def test_optional_canonical_token_limit_uses_finite_h7_default(
+    execution_budget: dict[str, int],
+) -> None:
+    request = research_request()
+    request["execution_context"]["execution_budget"] = execution_budget
+    gateway = SequenceGateway(
+        (
+            response(plan_payload(ResearchDomain.TECHNOLOGY), tokens=10),
+            response(claim_payload(fact("evidence_internal_001")), tokens=12),
+        )
+    )
+    result = await make_orchestrator(gateway).orchestrate(
+        request, existing_evidence=(evidence_item(),)
+    )
+    assert result.findings and result.recommendations
+    assert len(gateway.requests) == 3
+    assert result.usage.total_tokens == 32
+    assert all(item.requested_max_tokens is not None for item in gateway.requests)
+    assert all(item.budget.max_tokens is not None for item in gateway.requests)
+    assert result.usage.total_tokens <= H7_DEFAULT_MODEL_TOKEN_BUDGET
+
+
+@pytest.mark.asyncio
+async def test_explicit_token_limit_remains_authoritative_and_cumulative() -> None:
+    request = research_request()
+    request["execution_context"]["execution_budget"] = {"max_tokens": 100}
+    gateway = SequenceGateway(
+        (
+            response(plan_payload(ResearchDomain.TECHNOLOGY), tokens=30),
+            response(claim_payload(fact("evidence_internal_001")), tokens=30),
+            response(
+                recommendation_payload(
+                    finding_id=finding_id("claim_fact_001"),
+                    action=(
+                        "Run a security and compatibility benchmark and submit results for "
+                        "human review."
+                    ),
+                ),
+                tokens=30,
+            ),
+        )
+    )
+    result = await make_orchestrator(gateway).orchestrate(
+        request, existing_evidence=(evidence_item(),)
+    )
+    assert result.usage.total_tokens == 90
+    assert gateway.requests[0].requested_max_tokens == 100
+    assert gateway.requests[1].requested_max_tokens == 70
+    assert gateway.requests[2].requested_max_tokens == 40
+
+
+@pytest.mark.asyncio
+async def test_small_explicit_token_limit_caps_planner_request() -> None:
+    request = research_request()
+    request["execution_context"]["execution_budget"] = {"max_tokens": 5}
+    gateway = SequenceGateway(
+        (response(plan_payload(ResearchDomain.TECHNOLOGY), tokens=5),)
+    )
+    result = await make_orchestrator(gateway).orchestrate(request)
+    assert result.findings == ()
+    assert len(gateway.requests) == 1
+    assert gateway.requests[0].requested_max_tokens == 5
+    assert gateway.requests[0].budget.max_tokens == 5
+
+
+@pytest.mark.asyncio
+async def test_local_default_bounds_cumulative_three_stage_usage() -> None:
+    request = research_request()
+    request["execution_context"]["execution_budget"] = {"max_steps": 3}
+    gateway = SequenceGateway(
+        (
+            response(plan_payload(ResearchDomain.TECHNOLOGY), tokens=1_000),
+            response(claim_payload(fact("evidence_internal_001")), tokens=1_500),
+            response(
+                recommendation_payload(
+                    finding_id=finding_id("claim_fact_001"),
+                    action=(
+                        "Run a security and compatibility benchmark and submit results for "
+                        "human review."
+                    ),
+                ),
+                tokens=1_200,
+            ),
+        )
+    )
+    result = await make_orchestrator(gateway).orchestrate(
+        request, existing_evidence=(evidence_item(),)
+    )
+    assert result.usage.total_tokens == 3_700
+    assert result.usage.total_tokens <= H7_DEFAULT_MODEL_TOKEN_BUDGET
+    assert [item.requested_max_tokens for item in gateway.requests] == [
+        1_000,
+        1_500,
+        1_200,
+    ]
+
+
+@pytest.mark.asyncio
+async def test_cost_only_budget_keeps_token_fallback_and_cost_authority() -> None:
+    request = research_request()
+    request["execution_context"]["execution_budget"] = {"max_cost": 0.5}
+    gateway = SequenceGateway(
+        (
+            response(plan_payload(ResearchDomain.TECHNOLOGY), tokens=10, cost=0.2),
+            response(
+                claim_payload(fact("evidence_internal_001")), tokens=10, cost=0.2
+            ),
+            response(
+                recommendation_payload(
+                    finding_id=finding_id("claim_fact_001"),
+                    action=(
+                        "Run a security and compatibility benchmark and submit results for "
+                        "human review."
+                    ),
+                ),
+                tokens=10,
+                cost=0.1,
+            ),
+        )
+    )
+    result = await make_orchestrator(gateway).orchestrate(
+        request, existing_evidence=(evidence_item(),)
+    )
+    assert result.usage.total_tokens == 30
+    assert result.usage.estimated_cost == pytest.approx(0.5)
+    assert all(item.budget.max_tokens is not None for item in gateway.requests)
+    assert gateway.requests[2].budget.max_cost == pytest.approx(0.1)
 
 
 @pytest.mark.asyncio

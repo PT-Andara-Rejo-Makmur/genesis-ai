@@ -11,6 +11,7 @@ from genesis.model_gateway.interfaces import ModelGateway
 from genesis.model_gateway.types import ModelRequest
 from genesis.research.domains import domain_profile
 from genesis.research.models import ResearchDomain
+from genesis.research.orchestration.budget import remaining_model_tokens
 from genesis.research.orchestration.models import (
     ModelCallUsage,
     ResearchOrchestrationFailure,
@@ -53,7 +54,7 @@ class ResearchQuestionPlanner:
         data_classification: str,
         budget: ExecutionBudget,
     ) -> PlannedResearch:
-        maximum_tokens = min(1_000, budget.max_tokens or 1_000)
+        maximum_tokens = min(1_000, remaining_model_tokens(budget, ModelCallUsage()))
         profile = domain_profile(domain)
         response = await self._model_gateway.complete(
             ModelRequest(
