@@ -23,6 +23,7 @@ from genesis.evals.regression import (
     RegressionCaseRef,
     RegressionSetProposal,
 )
+from genesis.evals.research import RDSafetyCheck, RDSafetyEvaluation, RDSafetyEvaluator
 from genesis.evals.runner import EvaluationProbe, EvaluationRunner, RegisteredMaterialBehaviorProbe
 
 __all__ = [
@@ -44,6 +45,9 @@ __all__ = [
     "EvaluationSuiteResult",
     "EvaluationTaxonomy",
     "MaterialBehaviorObservation",
+    "RDSafetyCheck",
+    "RDSafetyEvaluation",
+    "RDSafetyEvaluator",
     "RegisteredMaterialBehaviorProbe",
     "RegressionCaseRef",
     "RegressionSetProposal",
