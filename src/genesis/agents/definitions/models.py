@@ -6,7 +6,12 @@ from pydantic import BaseModel, ConfigDict, Field
 if TYPE_CHECKING:
     from genesis.contracts import CanonicalContractCatalog
 
+CANONICAL_ID_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9._:-]{2,127}$"
 SEMVER_PATTERN = r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?$"
+SKILL_VERSION_PATTERN = (
+    r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
+    r"(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$"
+)
 AGENT_DEFINITION_SCHEMA = "https://schemas.alos.dev/v1/agent/agent-definition.schema.json"
 
 
@@ -19,6 +24,14 @@ class AgentBlueprint(BaseModel):
     default_skill_ids: tuple[str, ...] = ()
 
 
+class AgentSkillRef(BaseModel):
+    """Exact immutable canonical SkillRef projection; it grants no authority."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    skill_id: str = Field(pattern=CANONICAL_ID_PATTERN)
+    skill_version: str = Field(pattern=SKILL_VERSION_PATTERN)
+
+
 class AgentDefinition(BaseModel):
     """Typed runtime projection of the canonical AgentDefinition vocabulary."""
 
@@ -28,7 +41,7 @@ class AgentDefinition(BaseModel):
     name: str = Field(min_length=1)
     purpose: str = Field(min_length=1)
     capability_ids: tuple[str, ...] = Field(min_length=1)
-    skill_refs: tuple[str, ...] = ()
+    skill_refs: tuple[AgentSkillRef, ...] = ()
     tool_ids: tuple[str, ...] = ()
     permission_refs: tuple[str, ...] = ()
     scope_refs: tuple[str, ...] = Field(min_length=1)
