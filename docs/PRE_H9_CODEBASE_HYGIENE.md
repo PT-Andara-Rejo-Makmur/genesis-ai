@@ -1,86 +1,90 @@
-# Pre-H9 Codebase Hygiene
+# Kebersihan Basis Kode Pra-H9
 
-## Baseline and scope
+## Titik acuan dan cakupan
 
-This cleanup started from `cf3c8789dfc6d9c1b6daf57d9cd96be521870c56` on
-`development`. It is limited to permanent naming, type ownership, obsolete compatibility
-removal, package structure, assurance organization, tests, and current architecture docs.
-It adds no H9 feature and changes no authority or intelligence policy.
+Pembersihan ini dimulai dari `cf3c8789dfc6d9c1b6daf57d9cd96be521870c56` pada
+cabang `development`. Cakupannya terbatas pada penamaan permanen, kepemilikan tipe,
+penghapusan kompatibilitas usang, struktur package, pengorganisasian assurance, pengujian,
+dan dokumentasi arsitektur terkini. Perubahan ini tidak menambahkan fitur H9 serta tidak
+mengubah kebijakan kewenangan maupun kecerdasan.
 
-## Naming policy
+## Kebijakan penamaan
 
-Permanent production identifiers describe product semantics, not delivery milestones.
-Research policies use `policy.research.*`; assurance cases use `assurance.*`; the core
-regression proposal is `CORE_AI_ASSURANCE_REGRESSION_SET`; and research model limits use
-`DEFAULT_RESEARCH_MODEL_TOKEN_BUDGET`. Historical handoff and release evidence retains its
-original milestone vocabulary.
+Identifier produksi permanen menjelaskan semantik produk, bukan tonggak pelaksanaan proyek.
+Kebijakan riset menggunakan `policy.research.*`; kasus assurance menggunakan `assurance.*`;
+proposal regresi inti menggunakan `CORE_AI_ASSURANCE_REGRESSION_SET`; dan batas model riset
+menggunakan `DEFAULT_RESEARCH_MODEL_TOKEN_BUDGET`. Dokumen serah terima dan bukti rilis
+historis tetap mempertahankan kosakata tonggak aslinya.
 
-## Canonical and internal type policy
+## Kebijakan tipe canonical dan internal
 
-- `AgentDefinition` is a typed runtime projection using canonical field vocabulary such as
-  `skill_refs`, `tool_ids`, `permission_refs`, `scope_refs`, `model_policy_ref`, and
-  `delegation_policy`. Canonical JSON Schema validation remains at application boundaries.
-- `AgentDraftProposal` is the single Factory/governance draft projection. It remains
-  non-authoritative and is validated against the Contracts draft schema.
-- `FactoryExecutionContext` and factory `AuthorityContext` remain separate from runtime
-  `ExecutionContextView` and runtime `AuthorityContext`: the former projects a canonical
-  Factory request, while the latter represents narrowed runtime execution facts.
-- `ToolBoundaryContracts` remains a focused facade because the Backend tool boundary has an
-  independent schema set and fail-closed validation responsibility.
+- `AgentDefinition` adalah proyeksi runtime bertipe yang menggunakan kosakata field canonical,
+  seperti `skill_refs`, `tool_ids`, `permission_refs`, `scope_refs`, `model_policy_ref`, dan
+  `delegation_policy`. Validasi JSON Schema canonical tetap dilakukan pada boundary aplikasi.
+- `AgentDraftProposal` adalah satu-satunya proyeksi draft untuk serah terima Factory dan
+  governance. Tipe ini tetap non-authoritative dan divalidasi terhadap schema draft Contracts.
+- `FactoryExecutionContext` dan `AuthorityContext` milik Factory tetap terpisah dari
+  `ExecutionContextView` dan `AuthorityContext` milik runtime. Kelompok pertama memproyeksikan
+  request Factory canonical, sedangkan kelompok kedua merepresentasikan fakta eksekusi runtime
+  yang telah dipersempit.
+- `ToolBoundaryContracts` dipertahankan sebagai facade khusus karena boundary tool Backend
+  memiliki kumpulan schema mandiri dan tanggung jawab validasi fail-closed.
 
-## Removals
+## Penghapusan
 
-- The duplicate internal `AgentDraft`, obsolete `WorkforceControlPlane`, and its assessment
-  scaffold.
-- Unused `AgentRunInput`, `AgentRunResult`, and `AgentRuntime` protocol scaffolding together
-  with the unused PydanticAI wrapper that depended on it.
-- The one-shot `ExecutionPlan`, `RuntimePlanner`, `SinglePassPlanner`, and mixed core-runtime
-  compatibility branch.
-- The unused `FindingRecommendationBuilder.build()` compatibility helper.
-- Empty package trees that represented unimplemented lifecycle, supervision, remediation,
-  sustainability, evaluation taxonomy folders, memory learning/consolidation, planning,
-  synthesis, research domain placeholders, review disciplines, and runtime recovery.
+- `AgentDraft` internal yang duplikat, `WorkforceControlPlane` yang usang, dan scaffold
+  assessment terkait.
+- Scaffold protocol `AgentRunInput`, `AgentRunResult`, dan `AgentRuntime`, beserta wrapper
+  PydanticAI yang tidak digunakan dan bergantung kepadanya.
+- `ExecutionPlan`, `RuntimePlanner`, dan `SinglePassPlanner` satu lintasan, serta cabang
+  kompatibilitas yang tercampur di runtime inti.
+- Helper kompatibilitas `FindingRecommendationBuilder.build()` yang tidak digunakan.
+- Pohon package kosong untuk lifecycle, supervision, remediation, sustainability, taxonomy
+  evaluasi, learning/consolidation memory, planning, synthesis, placeholder domain riset,
+  disiplin review, dan recovery runtime yang belum diimplementasikan.
 
-## Renames
+## Penggantian nama
 
-- `AgentDraft` (Factory projection) to `AgentDraftProposal`.
-- Skill `EvaluationOutcome` to `SkillEvaluationOutcome`.
-- `H7_DEFAULT_MODEL_TOKEN_BUDGET` to `DEFAULT_RESEARCH_MODEL_TOKEN_BUDGET`.
-- `MVP2_H8_REGRESSION_SET` to `CORE_AI_ASSURANCE_REGRESSION_SET`.
-- Regression ID `mvp2-h8-rc1-ai-regression` to `core-ai-assurance-regression`.
-- Regression provenance field `created_from_milestone` to `provenance_label`, with value
+- `AgentDraft` (proyeksi Factory) menjadi `AgentDraftProposal`.
+- `EvaluationOutcome` milik Skill menjadi `SkillEvaluationOutcome`.
+- `H7_DEFAULT_MODEL_TOKEN_BUDGET` menjadi `DEFAULT_RESEARCH_MODEL_TOKEN_BUDGET`.
+- `MVP2_H8_REGRESSION_SET` menjadi `CORE_AI_ASSURANCE_REGRESSION_SET`.
+- ID regresi `mvp2-h8-rc1-ai-regression` menjadi `core-ai-assurance-regression`.
+- Field provenance regresi `created_from_milestone` menjadi `provenance_label`, dengan nilai
   `core-ai-feature-freeze`.
-- Research policy and assurance case identifiers to permanent semantic namespaces.
+- Kebijakan riset dan identifier kasus assurance dipindahkan ke namespace semantik permanen.
 
-## Preserved compatibility and intentional projections
+## Kompatibilitas yang dipertahankan dan proyeksi yang disengaja
 
-No milestone-named source compatibility aliases remain. The regression proposal version stays
-`1.0.0` because the predicates, ordering, severity, and behavior are unchanged; only its
-permanent identity vocabulary changed. `CapabilityDefinition`, `AgentBlueprint`, review
-models/protocols, and evaluation planning models remain because they are active, tested,
-domain-specific abstractions rather than duplicate canonical models.
+Tidak ada alias kompatibilitas source bernama tonggak yang dipertahankan. Versi proposal
+regresi tetap `1.0.0` karena predicate, urutan, severity, dan perilakunya tidak berubah; hanya
+kosakata identitas permanennya yang berubah. `CapabilityDefinition`, `AgentBlueprint`, model
+dan protocol review, serta model perencanaan evaluasi dipertahankan karena semuanya merupakan
+abstraksi domain aktif dan teruji, bukan duplikasi model canonical.
 
-`ResearchEngine` remains the canonical request/result application facade.
-`ResearchOrchestrator` remains the internal evidence/claims/conflict/findings/recommendation
-pipeline. `BackendToolClient` remains the correct HTTP path to the authoritative Backend.
+`ResearchEngine` tetap menjadi facade aplikasi canonical dari request ke result.
+`ResearchOrchestrator` tetap menjadi pipeline internal untuk evidence, claim, conflict,
+finding, dan recommendation. `BackendToolClient` tetap menjadi jalur HTTP yang benar menuju
+Backend authoritative.
 
-## Assurance and package structure
+## Struktur assurance dan package
 
-Assurance probes are separated into context, skill, memory, runtime, delegation, and research
-modules with a small deterministic registry and export module. An AST-backed hygiene test
-prevents milestone identifiers, duplicate Agent draft definitions, and one-shot planner types
-from returning to permanent source.
+Probe assurance dipisahkan menjadi modul context, skill, memory, runtime, delegation, dan
+research, dengan registry deterministik dan modul ekspor yang kecil. Pengujian kebersihan
+berbasis AST mencegah identifier tonggak, definisi Agent draft duplikat, dan tipe planner satu
+lintasan kembali ke source permanen.
 
-## H9 handoff notes
+## Catatan serah terima H9
 
-H9 may integrate additional canonical fields or adapters only through existing validated
-boundaries. Any contract mismatch discovered then belongs in a separate Contracts change; this
-cleanup does not alter `alos-contracts`, Backend, frontend, infrastructure, release state, or
-approval authority.
+H9 dapat mengintegrasikan field canonical atau adapter tambahan hanya melalui boundary
+tervalidasi yang sudah ada. Ketidaksesuaian kontrak yang ditemukan kemudian harus ditangani
+melalui perubahan Contracts terpisah. Pembersihan ini tidak mengubah `alos-contracts`, Backend,
+frontend, infrastructure, status rilis, atau kewenangan approval.
 
-## Behavior-preservation proof
+## Bukti bahwa perilaku tetap terjaga
 
-The cleanup retains all deterministic predicates, budgets, case ordering, evidence and
-authority subset checks, canonical validation, safe-failure behavior, and Backend/ModelGateway
-boundaries. Proof is the unchanged behavioral regression suite plus Ruff, mypy, full pytest,
-startup import smoke, and the GitHub `quality` workflow on `development`.
+Pembersihan ini mempertahankan seluruh predicate deterministik, budget, urutan kasus,
+pemeriksaan evidence dan subset kewenangan, validasi canonical, perilaku kegagalan aman, serta
+boundary Backend/ModelGateway. Buktinya adalah rangkaian regresi perilaku yang tidak berubah,
+Ruff, mypy, seluruh pytest, pemeriksaan impor aplikasi, dan workflow GitHub
+`Kualitas GENESIS` pada `development` yang seluruhnya berhasil.

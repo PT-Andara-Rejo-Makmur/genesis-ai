@@ -1,8 +1,8 @@
 # GENESIS AI Control Plane
 
-GENESIS adalah Governed AI Control Plane untuk ALOS. Repository ini mengimplementasikan capability factory non-authoritative, generic Agent runtime, Skill system, context dan memory intelligence, delegation, research intelligence, deterministic AI assurance/review, dan ModelGateway.
+GENESIS adalah pusat kendali AI tertata kelola untuk ALOS. Repository ini mengimplementasikan Capability Factory non-authoritative, runtime Agent generik, sistem Skill, kecerdasan context dan memory, delegation, kecerdasan research, assurance/review AI deterministik, dan ModelGateway.
 
-GENESIS bukan authentication server, RBAC authority, pemilik business database, final approval authority, release authority, frontend, atau unrestricted super-agent.
+GENESIS bukan server autentikasi, otoritas RBAC, pemilik database bisnis, otoritas approval akhir, otoritas rilis, frontend, atau super-agent tanpa batasan.
 
 ## Posisi di dalam ALOS
 
@@ -21,30 +21,30 @@ Frontend / ARA / GIIVEPRO
      ALOS Backend ToolExecutor
 ```
 
-ALOS Backend tetap source of truth. GENESIS melakukan reasoning dan orchestration, tetapi seluruh aksi bisnis, approval, release, permission, dan authoritative audit berada di Backend.
+ALOS Backend tetap menjadi sumber kebenaran. GENESIS melakukan penalaran dan orchestration, tetapi seluruh aksi bisnis, approval, rilis, permission, dan audit authoritative berada di Backend.
 
 ## GENESIS Control Plane dan MCA
 
-- **GENESIS Control Plane** menghasilkan capability dan Agent draft proposal untuk governance Backend. Lifecycle, approval, activation, supervision, remediation, dan sustainability control tetap berada di Backend atau direncanakan untuk integrasi berikutnya.
-- **MCA (AI Master Coordinator)** adalah satu-satunya master runtime business orchestrator. MCA mengoordinasikan pekerjaan multi-step dan delegation melalui interface orchestration.
+- **GENESIS Control Plane** menghasilkan proposal draft capability dan Agent untuk governance Backend. Lifecycle, approval, activation, supervision, remediation, dan kendali sustainability tetap berada di Backend atau direncanakan untuk integrasi berikutnya.
+- **MCA (AI Master Coordinator)** adalah satu-satunya orchestrator utama runtime bisnis. MCA mengoordinasikan pekerjaan bertahap dan delegation melalui interface orchestration.
 
-Control Plane tidak menjadi orchestrator kedua. MCA tidak mengambil alih workforce lifecycle.
+Control Plane tidak menjadi orchestrator kedua. MCA tidak mengambil alih lifecycle workforce.
 
 ## Cakupan repository
 
-Repository ini memiliki implementasi untuk capability, Agent, Skill, orchestration, delegation, runtime context/limits, memory intelligence, research, evaluation taxonomy, AI review, ModelGateway, serta service API internal.
+Repository ini memiliki implementasi untuk capability, Agent, Skill, orchestration, delegation, context/batas runtime, kecerdasan memory, research, taxonomy evaluasi, review AI, ModelGateway, serta layanan API internal.
 
-Repository ini tidak memiliki user authentication, RBAC policy authority, business state, direct business database connection, ToolExecutor authoritative, keputusan IT/Director, release transition, atau UI.
+Repository ini tidak memiliki autentikasi pengguna, otoritas kebijakan RBAC, state bisnis, koneksi langsung ke database bisnis, ToolExecutor authoritative, keputusan IT/Director, transisi rilis, atau UI.
 
 ## Framework yang disetujui
 
-- **PydanticAI**: dependency framework yang disetujui untuk adapter saat integrasi diperlukan. Runtime aktif tetap data-driven dan akses model hanya melalui ModelGateway.
-- **LangGraph**: adapter untuk workflow multi-step, delegation, pause/resume, state, checkpoint/recovery, dan human gate. Graph tidak digunakan untuk masalah sederhana.
-- **MCP**: adapter interoperabilitas connector di belakang governed tool boundary.
-- **Hermes**: reference architecture saja; source code dan autonomy model tidak disalin.
-- **PostgreSQL/pgvector**: target persistence untuk runtime/reference dan memory architecture, bukan business database authority.
+- **PydanticAI**: dependency framework yang disetujui untuk adapter saat integrasi diperlukan. Runtime aktif tetap berbasis data dan akses model hanya melalui ModelGateway.
+- **LangGraph**: adapter untuk workflow bertahap, delegation, pause/resume, state, checkpoint/recovery, dan gerbang manusia. Graph tidak digunakan untuk masalah sederhana.
+- **MCP**: adapter interoperabilitas connector di belakang boundary tool tertata kelola.
+- **Hermes**: hanya sebagai referensi arsitektur; source code dan model autonomy tidak disalin.
+- **PostgreSQL/pgvector**: target persistence untuk runtime/referensi dan arsitektur memory, bukan otoritas database bisnis.
 
-Framework hanya boleh digunakan di `src/genesis/adapters/`. Domain bergantung pada protocol, bukan implementasi framework.
+Framework hanya boleh digunakan di `src/genesis/adapters/`. Domain bergantung pada protocol, bukan pada implementasi framework.
 
 ## Prasyarat
 
@@ -52,7 +52,7 @@ Framework hanya boleh digunakan di `src/genesis/adapters/`. Domain bergantung pa
 - Git
 - Docker opsional
 - ALOS Backend dan `alos-contracts` untuk integrasi penuh
-- Provider credential tidak diperlukan untuk health, readiness, atau test suite
+- Kredensial provider tidak diperlukan untuk health, readiness, atau rangkaian pengujian
 
 ## Instalasi Windows PowerShell
 
@@ -74,38 +74,38 @@ python -m pip install -e '.[dev,frameworks]'
 cp .env.example .env
 ```
 
-## Environment variable
+## Variabel lingkungan
 
-- `APP_ENV`, `APP_HOST`, `APP_PORT`: konfigurasi service.
-- `ALOS_BACKEND_BASE_URL`: endpoint authoritative Backend.
-- `ALOS_INTERNAL_TOKEN`: secret service-to-service; tidak boleh disimpan ke Git.
-- `ALOS_CONTRACTS_PATH`: lokasi checkout `alos-contracts` untuk validasi canonical draft.
-- `OTEL_SERVICE_NAME`: nama telemetry service.
-- `DEFAULT_MODEL_ROUTE`: route ModelGateway; default `disabled` aman tanpa provider.
-- `MAX_DELEGATION_DEPTH`, `MAX_DELEGATION_CHILDREN`: hard limit orchestration.
+- `APP_ENV`, `APP_HOST`, `APP_PORT`: konfigurasi layanan.
+- `ALOS_BACKEND_BASE_URL`: endpoint Backend authoritative.
+- `ALOS_INTERNAL_TOKEN`: secret antarlayanan; tidak boleh disimpan ke Git.
+- `ALOS_CONTRACTS_PATH`: lokasi checkout `alos-contracts` untuk validasi draft canonical.
+- `OTEL_SERVICE_NAME`: nama layanan telemetry.
+- `DEFAULT_MODEL_ROUTE`: route ModelGateway; nilai default `disabled` aman tanpa provider.
+- `MAX_DELEGATION_DEPTH`, `MAX_DELEGATION_CHILDREN`: batas keras orchestration.
 
-## Menjalankan service
+## Menjalankan layanan
 
 ```bash
 uvicorn genesis.main:app --reload --host 127.0.0.1 --port 8100
 ```
 
-Endpoint foundation:
+Endpoint dasar:
 
 - `GET /health`
-- `GET /internal/v1/system/integration` untuk diagnostic internal tanpa provider atau database bisnis
+- `GET /internal/v1/system/integration` untuk diagnostik internal tanpa provider atau database bisnis
 - `GET /ready`
 - `GET /internal/v1/system/info`
-- `POST /internal/v1/factory/analyze` untuk requirement understanding dan canonical draft;
+- `POST /internal/v1/factory/analyze` untuk memahami requirement dan menghasilkan draft canonical;
   endpoint ini tidak mendaftarkan, menyetujui, atau merilis capability/Agent.
 - `GET /docs`
 - `GET /openapi.json`
 
-GENESIS mengirim canonical `ToolRequest` ke `POST /internal/v1/tool-requests` milik Backend melalui
-`BackendToolClient`; tidak ada adapter business tool pada GENESIS. Lihat
+GENESIS mengirim `ToolRequest` canonical ke `POST /internal/v1/tool-requests` milik Backend melalui
+`BackendToolClient`; tidak ada adapter tool bisnis pada GENESIS. Lihat
 [Boundary Eksekusi Tool](docs/TOOL_EXECUTION_BOUNDARY.md).
 
-## Pengujian dan quality gate
+## Pengujian dan gerbang mutu
 
 ```bash
 ruff check .
@@ -114,7 +114,7 @@ pytest
 python -c "from genesis.main import app; assert app.title == 'GENESIS AI Control Plane'"
 ```
 
-Test suite deterministic dan tidak memanggil provider API. Architecture checks menolak import framework/adapters ke domain dan direct provider dependency pada Agent domain.
+Rangkaian pengujian bersifat deterministik dan tidak memanggil API provider. Pemeriksaan arsitektur menolak impor framework/adapter ke domain dan dependency provider langsung pada domain Agent.
 
 ## Docker
 
@@ -123,42 +123,42 @@ docker build -t genesis-ai:local .
 docker run --rm --env-file .env -p 8100:8100 genesis-ai:local
 ```
 
-Container berjalan sebagai non-root. Provider configuration, telemetry exporter, serta persistence target disediakan oleh deployment.
+Container berjalan sebagai pengguna non-root. Konfigurasi provider, exporter telemetry, serta target persistence disediakan oleh deployment.
 
 ## Sistem Agent
 
-Agent tidak direpresentasikan sebagai satu Python class per logical Agent. Ratusan Agent menggunakan generic runtime melalui alur `Blueprint -> Definition -> Runtime -> Run`. Dynamic Agent menghasilkan `AgentDraftProposal` tervalidasi untuk handoff governance, bukan file `.py` atau self-activation.
+Agent tidak direpresentasikan sebagai satu class Python untuk setiap Agent logis. Ratusan Agent menggunakan runtime generik melalui alur `Blueprint -> Definition -> Runtime -> Run`. Agent dinamis menghasilkan `AgentDraftProposal` tervalidasi untuk serah terima governance, bukan file `.py` atau aktivasi mandiri.
 
 Capability Factory menjalankan alur `Requirement -> CapabilityResolver -> CapabilityDraft ->
-optional AgentDraft -> Backend Registry/Governance`. Katalog capability pada request adalah
-snapshot read-only dari Backend. Output canonical divalidasi terhadap `alos-contracts` tanpa
-Python import lintas repository.
+optional AgentDraftProposal -> Backend Registry/Governance`. Katalog capability pada request adalah
+snapshot hanya-baca dari Backend. Output canonical divalidasi terhadap `alos-contracts` tanpa
+impor Python lintas repository.
 
 ## Sistem Skill
 
-Skill menggunakan ALOS Skill Specification pada `skill.yaml` dan prosedur pada `SKILL.md`. Discovery hanya membaca metadata; instruksi penuh dimuat ketika relevan. Self-created Skill selalu menjadi `SkillDraft` yang memerlukan review dan activation dari ALOS authority.
+Skill menggunakan ALOS Skill Specification pada `skill.yaml` dan prosedur pada `SKILL.md`. Discovery hanya membaca metadata; instruksi penuh dimuat ketika relevan. Skill yang dibuat sistem selalu menjadi `SkillDraft` yang memerlukan review dan activation dari otoritas ALOS.
 
 ## Orchestration dan delegation
 
-Agent execution menggunakan `AgentRuntimeEngine` dengan iterative `AgenticPlanner`. LangGraph hanya dipilih ketika stateful multi-step workflow memang diperlukan. Delegation mempertahankan `root_run_id`, `parent_run_id`, depth, serta inheritance permission/scope/tool/budget dan mencegah cycle maupun authority expansion.
+Eksekusi Agent menggunakan `AgentRuntimeEngine` dengan `AgenticPlanner` iteratif. LangGraph hanya dipilih ketika workflow bertahap dan stateful memang diperlukan. Delegation mempertahankan `root_run_id`, `parent_run_id`, depth, serta pewarisan permission/scope/tool/budget dan mencegah cycle maupun perluasan kewenangan.
 
-## Model dan tool boundary
+## Boundary model dan tool
 
 Agent hanya mengakses model melalui alur `Agent -> ModelGateway -> policy -> budget -> route -> provider adapter`. Agent tidak mengimpor provider SDK.
 
 Aksi bisnis mengikuti `Agent -> ToolRequest -> ALOS Backend -> ToolExecutor -> ToolResult`. MCP tidak boleh menjadi jalur pintas untuk melewati Backend.
 
-Runtime generic berada pada `AgentRuntimeEngine`: ia mengonsumsi context dan authorization
-snapshot dari Backend, menjalankan planning melalui protocol, menerapkan execution budget,
-dan menghasilkan canonical AgentRunResult. Run authority dan persistence tidak berada di
+Runtime generik berada pada `AgentRuntimeEngine`: komponen ini mengonsumsi context dan snapshot
+authorization dari Backend, menjalankan perencanaan melalui protocol, menerapkan budget eksekusi,
+dan menghasilkan `AgentRunResult` canonical. Otoritas run dan persistence tidak berada di
 GENESIS. Lihat [Split Runtime MVP-1](docs/MVP1_RUNTIME_SPLIT.md).
 
-## Development workflow
+## Alur kerja pengembangan
 
 1. Modelkan capability sebelum memutuskan bahwa implementasinya harus berupa Agent.
 2. Tambahkan domain model/protocol tanpa import framework.
 3. Tempatkan integrasi framework atau provider hanya di `adapters/`.
-4. Tambahkan test taxonomy berbasis risiko.
-5. Jalankan seluruh quality gate dan dokumentasikan perubahan authority/budget/delegation.
+4. Tambahkan taxonomy pengujian berbasis risiko.
+5. Jalankan seluruh gerbang mutu dan dokumentasikan perubahan authority/budget/delegation.
 
 Dokumentasi: [Arsitektur](ARCHITECTURE.md), [Struktur Folder](docs/FOLDER_STRUCTURE.md), [Arsitektur Agent](docs/AGENT_ARCHITECTURE.md), [Migrasi Intelligence MVP-1](docs/MVP1_INTELLIGENCE_MIGRATION.md), [Migrasi Knowledge dan Research MVP-1](docs/MVP1_KNOWLEDGE_RESEARCH_MIGRATION.md), [Sistem Skill](docs/SKILL_SYSTEM.md), [Orchestration](docs/ORCHESTRATION.md), dan [Sistem Review](docs/REVIEW_SYSTEM.md).

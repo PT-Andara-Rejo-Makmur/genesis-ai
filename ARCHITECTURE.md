@@ -1,24 +1,26 @@
 # Arsitektur GENESIS
 
-GENESIS menggunakan arsitektur ports-and-adapters. Domain menyatakan model dan protocol; `adapters/` menghubungkan PydanticAI, LangGraph, MCP, atau provider. Arah dependency selalu dari adapter menuju domain interface.
+GENESIS menggunakan arsitektur ports-and-adapters. Domain menyatakan model dan protocol;
+`adapters/` menghubungkan PydanticAI, LangGraph, MCP, atau provider. Arah dependency selalu
+dari adapter menuju interface domain.
 
 ## Lapisan utama
 
 1. Capability Factory menghasilkan proposal workforce non-authoritative untuk governance Backend.
-2. Capability layer memastikan desain capability-first.
-3. Generic Agent/Skill runtime mengeksekusi definition berversi.
-4. MCA mengoordinasikan business workflow melalui OrchestrationEngine.
-5. DelegationGuard menegakkan lineage, authority inheritance, budget, limit, dan cycle prevention.
-6. ModelGateway menegakkan policy, budget, routing, dan provider isolation.
+2. Lapisan capability memastikan desain yang mengutamakan capability.
+3. Runtime Agent/Skill generik mengeksekusi definition berversi.
+4. MCA mengoordinasikan workflow bisnis melalui `OrchestrationEngine`.
+5. `DelegationGuard` menegakkan lineage, pewarisan kewenangan, budget, batas, dan pencegahan cycle.
+6. `ModelGateway` menegakkan policy, budget, routing, dan isolasi provider.
 7. Research, assurance, dan review menghasilkan evidence, finding, serta recommendation non-authoritative.
-8. ALOS Backend menerima ToolRequest dan tetap memiliki seluruh business action.
+8. ALOS Backend menerima `ToolRequest` dan tetap memiliki seluruh aksi bisnis.
 
-## Invariant
+## Invarian
 
 - Hanya ada satu MCA.
-- Control Plane bukan master runtime orchestrator kedua.
-- Domain tidak mengimpor framework adapter.
-- Agent tidak memanggil provider atau business database langsung.
-- AI review tidak menghasilkan approval authoritative.
-- Dynamic Agent/Skill menjadi draft data, bukan source code baru.
-- Child delegation tidak dapat memperluas authority atau budget.
+- Control Plane bukan orchestrator utama runtime kedua.
+- Domain tidak mengimpor adapter framework.
+- Agent tidak memanggil provider atau database bisnis secara langsung.
+- Review AI tidak menghasilkan approval authoritative.
+- Agent/Skill dinamis menjadi data draft, bukan source code baru.
+- Delegation anak tidak dapat memperluas kewenangan atau budget.
