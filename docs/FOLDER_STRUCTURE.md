@@ -1,8 +1,7 @@
 # Struktur Folder
 
-Dokumen ini menjelaskan struktur yang benar-benar tersedia pada baseline GENESIS. Folder
-domain yang belum memiliki implementasi lengkap tetap memiliki boundary package yang
-menyatakan tanggung jawab dan larangan authority-nya.
+Dokumen ini menjelaskan struktur yang benar-benar tersedia pada baseline GENESIS. Subsystem
+yang belum diimplementasikan tidak direpresentasikan sebagai package kosong.
 
 ## Folder tingkat atas
 
@@ -14,42 +13,23 @@ menyatakan tanggung jawab dan larangan authority-nya.
 
 ## `src/genesis`
 
-- `control_plane/`: workforce lifecycle dan capability management. `factory/` memahami
-  requirement, menghasilkan canonical CapabilityDraft/AgentDraft, prompt version, evidence
-  requirement, serta risk-based test plan tanpa menulis registry; `lifecycle/`, `supervision/`, `evaluation/`, `remediation/`,
-  `sustainability/`, dan `governance_intelligence/` memberi boundary untuk fungsi control
-  plane. Folder ini bukan MCA kedua dan tidak mengaktifkan draft sendiri.
-- `capabilities/`: model taxonomy capability-first pada `models/`; `resolver/` melakukan
-  requirement understanding dan matching terhadap snapshot katalog Backend yang read-only;
-  `definitions/` dan `discovery/` tetap boundary. Capability tidak otomatis menjadi Agent.
-- `agents/`: `definitions/` memisahkan Blueprint, Definition, dan Draft; `runtime/` menyediakan
-  generic runtime Protocol; `lifecycle/` menyatakan lifecycle non-authoritative; dan
-  `registry_client/` menjadi boundary ke registry authoritative ALOS Backend.
-- `skills/`: model specification serta progressive loader pada `loader/`; boundary eksekusi,
-  discovery, evaluasi, dan selective instruction loading berada di `runtime/`, `discovery/`,
-  `evaluator/`, dan `progressive_loading/`.
-- `orchestration/`: satu MCA pada `mca/`; authority-safe child delegation pada `delegation/`;
-  workflow Protocol pada `workflows/`; serta boundary `planning/` dan `synthesis/`.
-- `runtime/`: `limits/` memiliki ExecutionBudget; `agentic/` memiliki framework-neutral
-  `AgentRuntimeEngine`, planning/tool protocols, dan safe failure; `execution/` memiliki HTTP
-  client ToolRequest ke Backend; `context/` serta `recovery/` menjaga boundary scoped context
-  dan recovery.
-- `memory/`: boundary tenant-scoped untuk `retrieval/`, `ranking/`, `learning/`, dan
-  `consolidation/`. Learning hanya menghasilkan proposal, bukan perubahan authority otomatis.
-- `research/`: model Finding, Recommendation, dan BacklogCandidate; `engine/` memiliki
-  document intelligence source-bound dengan prompt/version dan validasi sitasi. Boundary lain
-  berada di `sources/`, `evidence/`, `findings/`, dan `recommendations/`. `domains/` membagi
-  riset menjadi `technology/`, `property_business/`, `management/`, dan `property_market/`.
-- `reviews/`: model dan Protocol AI review, dengan reviewer `business/`, `technical/`,
-  `security/`, `evidence/`, dan `cost_risk/`. Hasilnya recommendation/assurance, bukan approval.
-- `evals/`: model test profile berbasis risiko; folder `positive/`, `negative/`, `regression/`,
-  `security/`, dan `recovery/` memetakan lima taxonomy yang dapat dipilih sesuai risiko.
-- `model_gateway/`: request/response dan Protocol gateway; policy, budget, dan routing berada di
-  `policy/`, `budget/`, serta `routing/`. `adapters/` di bawah folder ini hanya menyatakan port
-  provider; implementasi framework/provider konkret tetap berada di root `adapters/`.
-- `adapters/`: satu-satunya lokasi integrasi framework. `pydantic_ai/` memetakan generic Agent
-  runtime, `langgraph/` memetakan stateful orchestration, `mcp/` menyiapkan governed
-  ToolRequest, dan `providers/` menyediakan implementation boundary ModelGateway.
+- `control_plane/`: capability factory non-authoritative yang menghasilkan canonical
+  CapabilityDraft dan `AgentDraftProposal` tanpa menulis registry atau mengubah lifecycle.
+- `capabilities/`: taxonomy capability-first dan resolver terhadap snapshot katalog Backend.
+- `agents/`: Blueprint dan typed canonical `AgentDefinition` projection. Runtime aktif berada
+  di `runtime/agentic/`; registry/lifecycle authority tetap di ALOS Backend.
+- `skills/`: specification, loader, evaluator, runtime, dan selective instruction loading.
+- `orchestration/`: satu MCA, authority-safe child delegation, dan workflow Protocol.
+- `runtime/`: execution limits, iterative `AgentRuntimeEngine`, scoped context, dan HTTP
+  ToolRequest client ke Backend.
+- `memory/`: retrieval, ranking, write policy, dan research memory yang tenant-scoped.
+- `research/`: canonical application facade pada `engine/` dan internal decomposition,
+  evidence, claim, conflict, finding, serta recommendation pipeline pada `orchestration/`.
+- `reviews/`: model, package builder, summary, dan Protocol AI review non-authoritative.
+- `evals/`: risk profile, versioned regression catalog, domain probes, deterministic runner,
+  readiness policy, dan research safety evaluator.
+- `model_gateway/`: request/response, policy, budget, routing, dan provider-isolation port.
+- `adapters/`: integrasi framework untuk LangGraph, MCP, dan provider ModelGateway.
 - `observability/`: correlation ID middleware dan OpenTelemetry API boundary tanpa memaksakan
   exporter tertentu.
 - `api/`: typed internal API untuk health, readiness, system information, serta factory

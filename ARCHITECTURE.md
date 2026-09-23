@@ -4,13 +4,13 @@ GENESIS menggunakan arsitektur ports-and-adapters. Domain menyatakan model dan p
 
 ## Lapisan utama
 
-1. Control Plane mengelola proposal dan lifecycle workforce.
+1. Capability Factory menghasilkan proposal workforce non-authoritative untuk governance Backend.
 2. Capability layer memastikan desain capability-first.
 3. Generic Agent/Skill runtime mengeksekusi definition berversi.
 4. MCA mengoordinasikan business workflow melalui OrchestrationEngine.
 5. DelegationGuard menegakkan lineage, authority inheritance, budget, limit, dan cycle prevention.
 6. ModelGateway menegakkan policy, budget, routing, dan provider isolation.
-7. Review/research/evaluation menghasilkan assurance serta recommendation non-authoritative.
+7. Research, assurance, dan review menghasilkan evidence, finding, serta recommendation non-authoritative.
 8. ALOS Backend menerima ToolRequest dan tetap memiliki seluruh business action.
 
 ## Invariant

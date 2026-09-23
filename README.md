@@ -1,6 +1,6 @@
 # GENESIS AI Control Plane
 
-GENESIS adalah Governed AI Control Plane untuk ALOS. Repository ini mengelola capability factory, workforce lifecycle, generic Agent runtime, Skill system, context dan memory intelligence, multi-agent orchestration, delegation, research, evaluation, AI review, supervision, remediation, sustainability intelligence, dan ModelGateway.
+GENESIS adalah Governed AI Control Plane untuk ALOS. Repository ini mengimplementasikan capability factory non-authoritative, generic Agent runtime, Skill system, context dan memory intelligence, delegation, research intelligence, deterministic AI assurance/review, dan ModelGateway.
 
 GENESIS bukan authentication server, RBAC authority, pemilik business database, final approval authority, release authority, frontend, atau unrestricted super-agent.
 
@@ -25,20 +25,20 @@ ALOS Backend tetap source of truth. GENESIS melakukan reasoning dan orchestratio
 
 ## GENESIS Control Plane dan MCA
 
-- **GENESIS Control Plane** mengelola lifecycle digital workforce: capability proposal, Agent/Skill draft, evaluation, supervision, remediation, dan sustainability recommendation.
+- **GENESIS Control Plane** menghasilkan capability dan Agent draft proposal untuk governance Backend. Lifecycle, approval, activation, supervision, remediation, dan sustainability control tetap berada di Backend atau direncanakan untuk integrasi berikutnya.
 - **MCA (AI Master Coordinator)** adalah satu-satunya master runtime business orchestrator. MCA mengoordinasikan pekerjaan multi-step dan delegation melalui interface orchestration.
 
 Control Plane tidak menjadi orchestrator kedua. MCA tidak mengambil alih workforce lifecycle.
 
 ## Cakupan repository
 
-Repository ini memiliki domain dan interface untuk capability, Agent, Skill, orchestration, delegation, runtime context/limit/recovery, memory intelligence, research, evaluation taxonomy, AI review, ModelGateway, framework adapter, serta service API internal.
+Repository ini memiliki implementasi untuk capability, Agent, Skill, orchestration, delegation, runtime context/limits, memory intelligence, research, evaluation taxonomy, AI review, ModelGateway, serta service API internal.
 
 Repository ini tidak memiliki user authentication, RBAC policy authority, business state, direct business database connection, ToolExecutor authoritative, keputusan IT/Director, release transition, atau UI.
 
 ## Framework yang disetujui
 
-- **PydanticAI**: adapter generic Agent runtime. Agent tetap data-driven dan akses model harus melalui ModelGateway-backed invoker.
+- **PydanticAI**: dependency framework yang disetujui untuk adapter saat integrasi diperlukan. Runtime aktif tetap data-driven dan akses model hanya melalui ModelGateway.
 - **LangGraph**: adapter untuk workflow multi-step, delegation, pause/resume, state, checkpoint/recovery, dan human gate. Graph tidak digunakan untuk masalah sederhana.
 - **MCP**: adapter interoperabilitas connector di belakang governed tool boundary.
 - **Hermes**: reference architecture saja; source code dan autonomy model tidak disalin.
@@ -127,7 +127,7 @@ Container berjalan sebagai non-root. Provider configuration, telemetry exporter,
 
 ## Sistem Agent
 
-Agent tidak direpresentasikan sebagai satu Python class per logical Agent. Ratusan Agent menggunakan generic runtime melalui alur `Blueprint -> Definition/Draft -> Runtime -> Run`. Dynamic Agent menghasilkan data `AgentDraft`, bukan file `.py` atau self-activation.
+Agent tidak direpresentasikan sebagai satu Python class per logical Agent. Ratusan Agent menggunakan generic runtime melalui alur `Blueprint -> Definition -> Runtime -> Run`. Dynamic Agent menghasilkan `AgentDraftProposal` tervalidasi untuk handoff governance, bukan file `.py` atau self-activation.
 
 Capability Factory menjalankan alur `Requirement -> CapabilityResolver -> CapabilityDraft ->
 optional AgentDraft -> Backend Registry/Governance`. Katalog capability pada request adalah
@@ -140,7 +140,7 @@ Skill menggunakan ALOS Skill Specification pada `skill.yaml` dan prosedur pada `
 
 ## Orchestration dan delegation
 
-Agent execution sederhana menggunakan AgentRuntime. LangGraph hanya dipilih ketika stateful multi-step workflow memang diperlukan. Delegation mempertahankan `root_run_id`, `parent_run_id`, depth, serta inheritance permission/scope/tool/budget dan mencegah cycle maupun authority expansion.
+Agent execution menggunakan `AgentRuntimeEngine` dengan iterative `AgenticPlanner`. LangGraph hanya dipilih ketika stateful multi-step workflow memang diperlukan. Delegation mempertahankan `root_run_id`, `parent_run_id`, depth, serta inheritance permission/scope/tool/budget dan mencegah cycle maupun authority expansion.
 
 ## Model dan tool boundary
 
