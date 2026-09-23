@@ -8,12 +8,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from genesis.research.models import ResearchDomain
-from genesis.research.sources import (
-    ContentTrust,
-    FreshnessStatus,
-    SourceReliability,
-    SourceType,
-)
+from genesis.research.sources import FreshnessStatus, SourceReliability
 from genesis.research.tool_selection import ResearchToolCategory
 from genesis.runtime.context import DataClassification
 
@@ -69,6 +64,13 @@ class SourceMode(StrEnum):
     NONE = "NONE"
 
 
+class EvidenceRelevance(StrEnum):
+    EXACT = "EXACT"
+    RELEVANT = "RELEVANT"
+    WEAK = "WEAK"
+    IRRELEVANT = "IRRELEVANT"
+
+
 class ResearchSubquery(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     subquery_id: str = Field(min_length=3, max_length=128)
@@ -122,15 +124,22 @@ class ResearchEvidenceItem(BaseModel):
     def source_id(self) -> str:
         return str(self.evidence_ref.get("source_id", ""))
 
-    @model_validator(mode="after")
-    def enforce_external_data_semantics(self) -> ResearchEvidenceItem:
-        source_type = self.evidence_ref.get("source_type")
-        if source_type == SourceType.EXTERNAL.value and (
-            self.evidence_ref.get("content_trust") != ContentTrust.UNTRUSTED.value
-            or self.evidence_ref.get("instruction_authority") is not False
-        ):
-            raise ValueError("External research evidence must remain untrusted data")
-        return self
+
+
+class EvidenceAdmissionAssessment(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    evidence_id: str
+    admitted: bool
+    reason_codes: tuple[str, ...] = Field(min_length=1)
+
+
+class EvidenceRelevanceAssessment(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    evidence_id: str
+    subquery_id: str
+    relevance: EvidenceRelevance
+    reason_codes: tuple[str, ...] = Field(min_length=1)
+    score: float = Field(ge=0, le=1)
 
 
 class EvidenceQualityAssessment(BaseModel):
@@ -281,6 +290,8 @@ class ResearchOrchestrationResult(BaseModel):
     source_mode: SourceMode
     retrieval_attempts: tuple[RetrievalAttempt, ...]
     evidence_items: tuple[ResearchEvidenceItem, ...]
+    evidence_admissions: tuple[EvidenceAdmissionAssessment, ...]
+    relevance_assessments: tuple[EvidenceRelevanceAssessment, ...]
     evidence_assessments: tuple[EvidenceQualityAssessment, ...]
     claims: tuple[ClaimAssessment, ...]
     duplicates: tuple[DuplicateAssessment, ...]
@@ -293,6 +304,8 @@ class ResearchOrchestrationResult(BaseModel):
     canonical_result: dict[str, Any]
     limitations: tuple[str, ...]
     usage: ModelCallUsage
+    reserved_retrieval_cost: float = Field(default=0, ge=0)
+    reserved_external_retrieval_cost: float = Field(default=0, ge=0)
     requires_human_review: Literal[True] = True
 
 

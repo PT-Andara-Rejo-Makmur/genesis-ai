@@ -39,13 +39,30 @@ class FindingRecommendationBuilder:
         tuple[ResearchFindingAnalysis, ...],
         tuple[ResearchRecommendationAnalysis, ...],
     ]:
+        """Compatibility helper; recommendation synthesis is ModelGateway-only."""
+        findings = self.build_findings(
+            domain=domain,
+            claims=claims,
+            conflicts=conflicts,
+            corroborations=corroborations,
+            assessments=assessments,
+        )
+        return findings, ()
+
+    def build_findings(
+        self,
+        *,
+        domain: ResearchDomain,
+        claims: tuple[ClaimAssessment, ...],
+        conflicts: tuple[ConflictAssessment, ...],
+        corroborations: tuple[CorroborationAssessment, ...],
+        assessments: tuple[EvidenceQualityAssessment, ...],
+    ) -> tuple[ResearchFindingAnalysis, ...]:
         quality = {item.evidence_id: item for item in assessments}
-        assumptions = tuple(item for item in claims if item.kind is ClaimKind.ASSUMPTION)
-        conflict_by_claim = {
-            claim_id: conflict.conflict_id
-            for conflict in conflicts
-            for claim_id in conflict.competing_claim_ids
-        }
+        conflict_by_claim: dict[str, list[str]] = {}
+        for conflict in conflicts:
+            for claim_id in conflict.competing_claim_ids:
+                conflict_by_claim.setdefault(claim_id, []).append(conflict.conflict_id)
         corroborated = {
             claim_id for item in corroborations for claim_id in item.claim_ids
         }
@@ -58,11 +75,7 @@ class FindingRecommendationBuilder:
                 for evidence_id in claim.evidence_ids
             ):
                 continue
-            conflict_ids = (
-                (conflict_by_claim[claim.claim_id],)
-                if claim.claim_id in conflict_by_claim
-                else ()
-            )
+            conflict_ids = tuple(sorted(conflict_by_claim.get(claim.claim_id, ())))
             confidence = claim.confidence
             if claim.claim_id in corroborated:
                 confidence = min(0.95, confidence + 0.05)
@@ -98,33 +111,7 @@ class FindingRecommendationBuilder:
                     limitations=tuple(limitations),
                 )
             )
-        recommendations: list[ResearchRecommendationAnalysis] = []
-        assumption_ids = tuple(item.claim_id for item in assumptions)
-        for finding in findings:
-            confidence = finding.confidence
-            limitations = [*finding.limitations, "HUMAN_REVIEW_REQUIRED"]
-            if assumption_ids:
-                confidence = min(confidence, 0.6)
-                limitations.append("MATERIAL_ASSUMPTIONS_PRESENT")
-            recommendations.append(
-                ResearchRecommendationAnalysis(
-                    recommendation_id=self._identifier(
-                        "recommendation", finding.finding_id
-                    ),
-                    finding_ids=(finding.finding_id,),
-                    fact_claim_ids=finding.fact_claim_ids,
-                    conflict_ids=finding.conflict_ids,
-                    assumption_ids=assumption_ids,
-                    proposed_action=(
-                        "Submit this research finding for human domain review and decide whether "
-                        "a governed follow-up investigation is warranted."
-                    ),
-                    confidence=confidence,
-                    evidence_ids=finding.evidence_ids,
-                    limitations=tuple(dict.fromkeys(limitations)),
-                )
-            )
-        return tuple(findings), tuple(recommendations)
+        return tuple(findings)
 
     @staticmethod
     def _identifier(prefix: str, seed: str) -> str:

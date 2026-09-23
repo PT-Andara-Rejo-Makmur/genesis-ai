@@ -274,6 +274,10 @@ def test_h7_research_orchestration_has_no_io_provider_or_authority_bypass() -> N
         "httpx",
         "requests",
         "urllib",
+        "chromadb",
+        "faiss",
+        "pinecone",
+        "sentence_transformers",
     )
     forbidden_classes = {
         "ToolExecutor",

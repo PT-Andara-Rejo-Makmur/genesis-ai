@@ -1,12 +1,12 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
 import pytest
-from pydantic import ValidationError
 
 from genesis.contracts import CanonicalContractCatalog
 from genesis.model_gateway.types import ModelRequest, ModelResponse
@@ -17,19 +17,27 @@ from genesis.research.orchestration import (
     ClaimAssessment,
     ClaimComparisonIntelligence,
     ClaimKind,
+    ConflictAssessment,
+    ConflictType,
     DelegatedResearchInput,
     EvidenceQualityPolicy,
+    EvidenceRelevance,
+    EvidenceRelevancePolicy,
     EvidenceUsability,
     FindingRecommendationBuilder,
     ResearchClaimExtractor,
+    ResearchEvidenceAdmissionPolicy,
     ResearchEvidenceItem,
     ResearchOrchestrationFailure,
     ResearchOrchestrator,
     ResearchQuestionPlanner,
+    ResearchRecommendationSynthesizer,
     ResearchRetrievalRequest,
     ResearchRetrievalResult,
+    ResearchSubquery,
     RetrievalStatus,
     SourceMode,
+    evidence_items_from_context,
 )
 from genesis.research.tool_selection import (
     AuthorizedResearchTool,
@@ -46,6 +54,41 @@ class SequenceGateway:
 
     async def complete(self, request: ModelRequest) -> ModelResponse:
         self.requests.append(request)
+        if not self.responses and request.purpose == "evidence-bound-recommendation-synthesis":
+            payload = json.loads(str(request.messages[-1]["content"]))
+            finding = payload["findings"][0]
+            facts = {
+                item["claim_id"]: item for item in payload["fact_claims"]
+            }
+            fact_ids = finding["fact_claim_ids"]
+            topics = {facts[item]["normalized_topic"] for item in fact_ids}
+            assumptions = [
+                item["claim_id"]
+                for item in payload["assumptions"]
+                if item["normalized_topic"] in topics
+            ]
+            domain_action = payload["domain_profile"]["allowed_recommendations"][0]
+            return response(
+                {
+                    "recommendations": [
+                        {
+                            "recommendation_id": "recommendation_h7_test_001",
+                            "finding_ids": [finding["finding_id"]],
+                            "fact_claim_ids": fact_ids,
+                            "conflict_ids": finding["conflict_ids"],
+                            "assumption_ids": assumptions,
+                            "proposed_action": (
+                                f"Conduct a governed {domain_action.lower()} using the cited "
+                                "finding and submit measured outcomes for human review."
+                            ),
+                            "evidence_ids": finding["evidence_ids"],
+                            "limitations": [],
+                            "requires_human_review": True,
+                            "backlog_candidate": True,
+                        }
+                    ]
+                }
+            )
         return self.responses.pop(0)
 
 
@@ -80,7 +123,7 @@ def subquery(
 ) -> dict[str, Any]:
     return {
         "subquery_id": subquery_id,
-        "question": f"What evidence is required for {domain.value}?",
+        "question": f"What current {domain.value} evidence supports the proposal?",
         "domain": domain.value,
         "evidence_need": need,
         "preferred_source_categories": [
@@ -106,6 +149,37 @@ def plan_payload(
 
 def claim_payload(*claims: dict[str, Any]) -> dict[str, Any]:
     return {"claims": list(claims)}
+
+
+def recommendation_payload(
+    *,
+    finding_id: str = "finding_placeholder",
+    fact_claim_ids: Sequence[str] = ("claim_fact_001",),
+    evidence_ids: Sequence[str] = ("evidence_internal_001",),
+    conflict_ids: Sequence[str] = (),
+    assumption_ids: Sequence[str] = (),
+    action: str = "Run a governed benchmark and submit measured results for human review.",
+) -> dict[str, Any]:
+    return {
+        "recommendations": [
+            {
+                "recommendation_id": "recommendation_h7_delta_001",
+                "finding_ids": [finding_id],
+                "fact_claim_ids": list(fact_claim_ids),
+                "conflict_ids": list(conflict_ids),
+                "assumption_ids": list(assumption_ids),
+                "proposed_action": action,
+                "evidence_ids": list(evidence_ids),
+                "limitations": [],
+                "requires_human_review": True,
+                "backlog_candidate": True,
+            }
+        ]
+    }
+
+
+def finding_id(claim_id: str) -> str:
+    return "finding_" + hashlib.sha256(claim_id.encode()).hexdigest()[:20]
 
 
 def fact(
@@ -219,13 +293,14 @@ def evidence_item(
     evidence_id: str = "evidence_internal_001",
     *,
     category: ResearchToolCategory = ResearchToolCategory.INTERNAL_DOCUMENT,
-    subquery_ids: tuple[str, ...] = (),
+    subquery_ids: tuple[str, ...] = ("subquery_current_001",),
     child_task_id: str | None = None,
+    content: str | None = None,
     **ref_changes: Any,
 ) -> ResearchEvidenceItem:
     return ResearchEvidenceItem(
         evidence_ref=evidence_ref(evidence_id, **ref_changes),
-        content=f"Evidence content for {evidence_id}.",
+        content=content or f"Current technology proposal evidence for {evidence_id}.",
         category=category,
         subquery_ids=subquery_ids,
         child_task_id=child_task_id,
@@ -285,6 +360,9 @@ def make_orchestrator(
             model_gateway=gateway, max_subqueries=max_subqueries
         ),
         claim_extractor=ResearchClaimExtractor(model_gateway=gateway),
+        recommendation_synthesizer=ResearchRecommendationSynthesizer(
+            model_gateway=gateway
+        ),
         evidence_provider=provider,
     )
 
@@ -468,9 +546,13 @@ def test_missing_identity_scope_or_provenance_is_excluded() -> None:
     assert assessment.confidence_cap == 0
 
 
-def test_external_governed_content_is_rejected_structurally() -> None:
-    with pytest.raises(ValidationError):
-        evidence_item(source_type="EXTERNAL", content_trust="GOVERNED")
+def test_external_governed_content_is_rejected_by_central_admission() -> None:
+    item = evidence_item(source_type="EXTERNAL", content_trust="GOVERNED")
+    admitted, assessment = ResearchEvidenceAdmissionPolicy(
+        contracts=CanonicalContractCatalog(CONTRACTS_ROOT)
+    ).admit(item, research_request()["execution_context"])
+    assert admitted is None
+    assert assessment.admitted is False
 
 
 def assessed_claim(
@@ -721,3 +803,518 @@ def test_builder_never_creates_finding_from_assumption_or_gap_only() -> None:
         assessments=(),
     )
     assert findings == () and recommendations == ()
+
+
+def test_relevance_is_deterministic_and_subquery_specific() -> None:
+    policy = EvidenceRelevancePolicy()
+    related = evidence_item(
+        subquery_ids=(),
+        content="Current warehouse demand and regional occupancy evidence.",
+    )
+    unrelated = evidence_item(
+        "evidence_leave_sop",
+        subquery_ids=(),
+        content="Employee annual leave SOP and holiday approval procedure.",
+    )
+    demand = ResearchSubquery.model_validate(
+        subquery(
+            ResearchDomain.PROPERTY_MARKET,
+            "subquery_demand",
+            need="CURRENT_STATE",
+        )
+        | {"question": "What is current warehouse demand in the region?"}
+    )
+    governance = ResearchSubquery.model_validate(
+        subquery(
+            ResearchDomain.MANAGEMENT,
+            "subquery_governance",
+            need="GOVERNANCE",
+        )
+        | {"question": "Which employee leave SOP governs holiday approval?"}
+    )
+    first = policy.assess(related, demand)
+    assert first == policy.assess(related, demand)
+    assert first.relevance is EvidenceRelevance.RELEVANT
+    assert policy.assess(unrelated, demand).relevance is EvidenceRelevance.IRRELEVANT
+    assert policy.assess(unrelated, governance).relevance is EvidenceRelevance.RELEVANT
+
+
+def test_explicit_relevance_binding_has_precedence() -> None:
+    policy = EvidenceRelevancePolicy()
+    target = ResearchSubquery.model_validate(
+        subquery(ResearchDomain.TECHNOLOGY, "subquery_target")
+    )
+    ambiguous = evidence_item(
+        subquery_ids=("subquery_target",),
+        content="No lexical relationship is required for explicit binding.",
+    )
+    mismatch = evidence_item(
+        "evidence_mismatch",
+        subquery_ids=("subquery_other",),
+        content="Current technology proposal evidence supports the proposal.",
+    )
+    assert policy.assess(ambiguous, target).relevance is EvidenceRelevance.EXACT
+    assert policy.assess(mismatch, target).relevance is EvidenceRelevance.IRRELEVANT
+
+
+def test_context_projection_remains_untagged_and_relevance_aware() -> None:
+    original = evidence_item(
+        subquery_ids=(),
+        content="Current warehouse demand and regional occupancy evidence.",
+    )
+    projected = evidence_items_from_context(context_bundle(original))[0]
+    assert projected.subquery_ids == ()
+    demand = ResearchSubquery.model_validate(
+        subquery(ResearchDomain.PROPERTY_MARKET, "subquery_demand")
+        | {"question": "What is current warehouse demand in the region?"}
+    )
+    sop = ResearchSubquery.model_validate(
+        subquery(ResearchDomain.MANAGEMENT, "subquery_sop", need="GOVERNANCE")
+        | {"question": "Which employee leave SOP governs holiday approval?"}
+    )
+    policy = EvidenceRelevancePolicy()
+    assert policy.assess(projected, demand).relevance is EvidenceRelevance.RELEVANT
+    assert policy.assess(projected, sop).relevance is EvidenceRelevance.IRRELEVANT
+
+
+@pytest.mark.parametrize(
+    ("changes", "reason"),
+    (
+        ({"source_type": "ALIEN"}, "CANONICAL_EVIDENCE_INVALID"),
+        ({"freshness": "FUTURE"}, "CANONICAL_EVIDENCE_INVALID"),
+        ({"reliability": "PERFECT"}, "CANONICAL_EVIDENCE_INVALID"),
+        ({"content_hash": "not-a-hash"}, "CANONICAL_EVIDENCE_INVALID"),
+        ({"uri": "not a uri"}, "CANONICAL_EVIDENCE_INVALID"),
+        ({"captured_at": "yesterday"}, "CANONICAL_EVIDENCE_INVALID"),
+        ({"data_classification": "SECRET"}, "CANONICAL_EVIDENCE_INVALID"),
+        ({"instruction_authority": True}, "CANONICAL_EVIDENCE_INVALID"),
+        ({"tenant_id": "tenant_other"}, "EVIDENCE_IDENTITY_MISMATCH"),
+        ({"organization_id": "organization_other"}, "EVIDENCE_IDENTITY_MISMATCH"),
+        ({"workspace_id": "workspace_other"}, "EVIDENCE_IDENTITY_MISMATCH"),
+        ({"scope_refs": ["scope.admin"]}, "EVIDENCE_SCOPE_EXPANSION"),
+        ({"data_classification": "CONFIDENTIAL"}, "EVIDENCE_CLASSIFICATION_EXPANSION"),
+        ({"validation_status": "INVALID"}, "EVIDENCE_NOT_VALID"),
+    ),
+)
+def test_canonical_evidence_admission_rejects_malformed_or_expanded_refs(
+    changes: dict[str, Any], reason: str
+) -> None:
+    policy = ResearchEvidenceAdmissionPolicy(
+        contracts=CanonicalContractCatalog(CONTRACTS_ROOT)
+    )
+    admitted, assessment = policy.admit(
+        evidence_item(**changes), research_request()["execution_context"]
+    )
+    assert admitted is None
+    assert assessment.reason_codes == (reason,)
+
+
+def test_valid_canonical_evidence_is_admitted_without_lineage_mutation() -> None:
+    item = evidence_item()
+    admitted, assessment = ResearchEvidenceAdmissionPolicy(
+        contracts=CanonicalContractCatalog(CONTRACTS_ROOT)
+    ).admit(item, research_request()["execution_context"])
+    assert admitted is not None
+    assert admitted.evidence_ref == item.evidence_ref
+    assert assessment.admitted is True
+
+
+@pytest.mark.asyncio
+async def test_irrelevant_internal_evidence_does_not_suppress_retrieval() -> None:
+    unrelated = evidence_item(
+        "evidence_leave_sop",
+        subquery_ids=(),
+        content="Employee annual leave SOP and holiday approval procedure.",
+    )
+    external = evidence_item(
+        "evidence_market_demand",
+        source_type="EXTERNAL",
+        source_id="source_market",
+        category=ResearchToolCategory.EXTERNAL_RESEARCH,
+        content="Current warehouse demand in the region increased.",
+    )
+    provider = FakeProvider(
+        (ResearchRetrievalResult(status=RetrievalStatus.SUCCESS, items=(external,)),)
+    )
+    plan = plan_payload(ResearchDomain.PROPERTY_MARKET)
+    plan["subqueries"][0]["question"] = "What is current warehouse demand in the region?"
+    gateway = SequenceGateway(
+        (
+            response(plan),
+            response(claim_payload(fact("evidence_market_demand"))),
+        )
+    )
+    result = await make_orchestrator(gateway, provider).orchestrate(
+        research_request(
+            ResearchDomain.PROPERTY_MARKET,
+            allowed_tools=("research.external.retrieve",),
+        ),
+        existing_evidence=(unrelated,),
+        authorized_tools=(external_tool(),),
+        maximum_external_cost=2,
+    )
+    assert len(provider.requests) == 1
+    assert result.findings
+    assert "evidence_leave_sop" not in {item.evidence_id for item in result.evidence_items}
+
+
+@pytest.mark.asyncio
+async def test_invalid_provider_sibling_is_rejected_before_claim_model() -> None:
+    invalid = evidence_item(
+        "evidence_invalid_provider",
+        source_type="ALIEN",
+    )
+    valid = evidence_item(
+        "evidence_valid_provider",
+        source_type="EXTERNAL",
+        source_id="source_external_valid",
+        category=ResearchToolCategory.EXTERNAL_RESEARCH,
+    )
+    provider = FakeProvider(
+        (ResearchRetrievalResult(status=RetrievalStatus.SUCCESS, items=(invalid, valid)),)
+    )
+    gateway = SequenceGateway(
+        (
+            response(plan_payload(ResearchDomain.TECHNOLOGY)),
+            response(claim_payload(fact("evidence_valid_provider"))),
+        )
+    )
+    result = await make_orchestrator(gateway, provider).orchestrate(
+        research_request(allowed_tools=("research.external.retrieve",)),
+        authorized_tools=(external_tool(),),
+        maximum_external_cost=2,
+    )
+    claim_request = json.loads(str(gateway.requests[1].messages[-1]["content"]))
+    serialized = json.dumps(claim_request)
+    assert "evidence_invalid_provider" not in serialized
+    assert "evidence_valid_provider" in serialized
+    assert any(not item.admitted for item in result.evidence_admissions)
+
+
+@pytest.mark.asyncio
+async def test_all_invalid_provider_evidence_yields_no_fabricated_result() -> None:
+    invalid = evidence_item("evidence_invalid_provider", source_type="ALIEN")
+    provider = FakeProvider(
+        (ResearchRetrievalResult(status=RetrievalStatus.SUCCESS, items=(invalid,)),)
+    )
+    gateway = SequenceGateway((response(plan_payload(ResearchDomain.TECHNOLOGY)),))
+    result = await make_orchestrator(gateway, provider).orchestrate(
+        research_request(allowed_tools=("research.external.retrieve",)),
+        authorized_tools=(external_tool(),),
+        maximum_external_cost=2,
+    )
+    assert len(gateway.requests) == 1
+    assert result.findings == () and result.recommendations == ()
+    assert "CANONICAL_EVIDENCE_INVALID" in " ".join(result.limitations)
+
+
+@pytest.mark.asyncio
+async def test_recommendation_failure_preserves_findings_and_rejects_unknown_assumption() -> None:
+    relevant_assumption = {
+        "claim_id": "claim_assumption_relevant",
+        "normalized_topic": "research-topic",
+        "statement": "Adoption capacity is assumed.",
+        "kind": "ASSUMPTION",
+        "evidence_ids": [],
+    }
+    gateway = SequenceGateway(
+        (
+            response(plan_payload(ResearchDomain.TECHNOLOGY)),
+            response(
+                claim_payload(fact("evidence_internal_001"), relevant_assumption)
+            ),
+            response(
+                recommendation_payload(
+                    finding_id=finding_id("claim_fact_001"),
+                    assumption_ids=("claim_unknown",),
+                )
+            ),
+        )
+    )
+    result = await make_orchestrator(gateway).orchestrate(
+        research_request(), existing_evidence=(evidence_item(),)
+    )
+    assert result.findings
+    assert result.recommendations == ()
+    assert "RECOMMENDATION_ASSUMPTION_UNKNOWN" in result.limitations
+
+
+@pytest.mark.asyncio
+async def test_recommendation_maps_only_relevant_assumption_and_accounts_usage() -> None:
+    relevant = {
+        "claim_id": "claim_assumption_relevant",
+        "normalized_topic": "research-topic",
+        "statement": "Adoption capacity is assumed.",
+        "kind": "ASSUMPTION",
+        "evidence_ids": [],
+    }
+    unrelated = {
+        "claim_id": "claim_assumption_unrelated",
+        "normalized_topic": "employee-leave",
+        "statement": "Leave capacity is assumed.",
+        "kind": "ASSUMPTION",
+        "evidence_ids": [],
+    }
+    gateway = SequenceGateway(
+        (
+            response(plan_payload(ResearchDomain.TECHNOLOGY), tokens=10, cost=0.1),
+            response(
+                claim_payload(fact("evidence_internal_001"), relevant, unrelated),
+                tokens=12,
+                cost=0.2,
+            ),
+            response(
+                recommendation_payload(
+                    finding_id=finding_id("claim_fact_001"),
+                    assumption_ids=("claim_assumption_relevant",),
+                    action=(
+                        "Run a security and compatibility benchmark, then submit the measured "
+                        "results for governed human adoption review."
+                    ),
+                ),
+                tokens=14,
+                cost=0.3,
+            ),
+        )
+    )
+    result = await make_orchestrator(gateway).orchestrate(
+        research_request(), existing_evidence=(evidence_item(),)
+    )
+    assert result.recommendations[0].assumption_ids == (
+        "claim_assumption_relevant",
+    )
+    assert result.usage.total_tokens == 36
+    assert result.usage.estimated_cost == pytest.approx(0.6)
+    assert len(gateway.requests) == 3
+
+
+def test_one_claim_preserves_multiple_conflicts_deterministically() -> None:
+    item = evidence_item()
+    quality = EvidenceQualityPolicy().assess(
+        item, research_request()["execution_context"]
+    )
+    primary = assessed_claim(
+        "claim_primary", "Finance owns policy.", item.evidence_id, "source_a", "1"
+    )
+    other = assessed_claim(
+        "claim_other", "Legal owns policy.", item.evidence_id, "source_a", "2"
+    )
+    conflicts = (
+        ConflictAssessment(
+            conflict_id="conflict_b",
+            topic="policy-owner",
+            competing_claim_ids=("claim_primary", "claim_other"),
+            evidence_ids=(item.evidence_id,),
+            source_ids=("source_a",),
+            source_versions=("1", "2"),
+            conflict_type=ConflictType.SOURCE_VERSION,
+            limitations=("UNRESOLVED_SOURCE_CONFLICT",),
+        ),
+        ConflictAssessment(
+            conflict_id="conflict_a",
+            topic="policy-owner",
+            competing_claim_ids=("claim_primary", "claim_other"),
+            evidence_ids=(item.evidence_id,),
+            source_ids=("source_a",),
+            source_versions=("1", "2"),
+            conflict_type=ConflictType.CLAIM_CONTRADICTION,
+            limitations=("UNRESOLVED_SOURCE_CONFLICT",),
+        ),
+    )
+    findings = FindingRecommendationBuilder().build_findings(
+        domain=ResearchDomain.MANAGEMENT,
+        claims=(primary, other),
+        conflicts=conflicts,
+        corroborations=(),
+        assessments=(quality,),
+    )
+    assert findings[0].conflict_ids == ("conflict_a", "conflict_b")
+    assert findings[0].confidence <= 0.5
+
+
+@pytest.mark.asyncio
+async def test_cumulative_external_retrieval_cost_blocks_second_provider_call() -> None:
+    first = evidence_item(
+        "evidence_first_external",
+        source_type="EXTERNAL",
+        source_id="source_first",
+        category=ResearchToolCategory.EXTERNAL_RESEARCH,
+        subquery_ids=("subquery_first",),
+    )
+    provider = FakeProvider(
+        (ResearchRetrievalResult(status=RetrievalStatus.SUCCESS, items=(first,)),)
+    )
+    gateway = SequenceGateway(
+        (
+            response(
+                plan_payload(
+                    ResearchDomain.TECHNOLOGY,
+                    subquery(ResearchDomain.TECHNOLOGY, "subquery_first"),
+                    subquery(ResearchDomain.TECHNOLOGY, "subquery_second"),
+                )
+            ),
+            response(claim_payload(fact("evidence_first_external"))),
+        )
+    )
+    result = await make_orchestrator(gateway, provider).orchestrate(
+        research_request(allowed_tools=("research.external.retrieve",)),
+        authorized_tools=(external_tool(estimated_cost=1),),
+        maximum_external_cost=1.5,
+    )
+    assert len(provider.requests) == 1
+    assert result.reserved_external_retrieval_cost == 1
+    assert "CUMULATIVE_RETRIEVAL_COST_LIMIT" in " ".join(result.limitations)
+
+
+@pytest.mark.asyncio
+async def test_generic_retrieval_cost_is_cumulative_and_external_zero_does_not_block_connector(
+) -> None:
+    first = evidence_item(
+        "evidence_first_connector",
+        category=ResearchToolCategory.CONNECTOR,
+        subquery_ids=("subquery_first",),
+    )
+    provider = FakeProvider(
+        (ResearchRetrievalResult(status=RetrievalStatus.SUCCESS, items=(first,)),)
+    )
+    connector = AuthorizedResearchTool(
+        tool_id="research.connector.retrieve",
+        category=ResearchToolCategory.CONNECTOR,
+        domains=tuple(ResearchDomain),
+        scope_refs=("scope.research",),
+        estimated_cost=1,
+    )
+    gateway = SequenceGateway(
+        (
+            response(
+                plan_payload(
+                    ResearchDomain.TECHNOLOGY,
+                    subquery(ResearchDomain.TECHNOLOGY, "subquery_first"),
+                    subquery(ResearchDomain.TECHNOLOGY, "subquery_second"),
+                )
+            ),
+            response(claim_payload(fact("evidence_first_connector"))),
+        )
+    )
+    result = await make_orchestrator(gateway, provider).orchestrate(
+        research_request(allowed_tools=(connector.tool_id,)),
+        authorized_tools=(connector,),
+        maximum_external_cost=0,
+        maximum_tool_cost=1.5,
+    )
+    assert len(provider.requests) == 1
+    assert result.reserved_retrieval_cost == 1
+    assert result.reserved_external_retrieval_cost == 0
+    assert "CUMULATIVE_RETRIEVAL_COST_LIMIT" in " ".join(result.limitations)
+
+
+@pytest.mark.asyncio
+async def test_recommendation_budget_exhaustion_skips_third_model_call() -> None:
+    request = research_request()
+    request["execution_context"]["execution_budget"]["max_tokens"] = 20
+    gateway = SequenceGateway(
+        (
+            response(plan_payload(ResearchDomain.TECHNOLOGY), tokens=10),
+            response(
+                claim_payload(fact("evidence_internal_001")), tokens=10
+            ),
+        )
+    )
+    result = await make_orchestrator(gateway).orchestrate(
+        request, existing_evidence=(evidence_item(),)
+    )
+    assert len(gateway.requests) == 2
+    assert result.findings
+    assert result.recommendations == ()
+    assert "RECOMMENDATION_MODEL_BUDGET_EXHAUSTED" in result.limitations
+
+
+@pytest.mark.asyncio
+async def test_recommendation_cannot_express_approval_or_execution_authority() -> None:
+    gateway = SequenceGateway(
+        (
+            response(plan_payload(ResearchDomain.TECHNOLOGY)),
+            response(claim_payload(fact("evidence_internal_001"))),
+            response(
+                recommendation_payload(
+                    finding_id=finding_id("claim_fact_001"),
+                    action="Approve and deploy this technology automatically to production.",
+                )
+            ),
+        )
+    )
+    result = await make_orchestrator(gateway).orchestrate(
+        research_request(), existing_evidence=(evidence_item(),)
+    )
+    assert result.findings
+    assert result.recommendations == ()
+    assert "RECOMMENDATION_AUTHORITY_SEMANTICS" in result.limitations
+
+
+@pytest.mark.asyncio
+async def test_generic_non_domain_recommendation_is_rejected() -> None:
+    gateway = SequenceGateway(
+        (
+            response(plan_payload(ResearchDomain.TECHNOLOGY)),
+            response(claim_payload(fact("evidence_internal_001"))),
+            response(
+                recommendation_payload(
+                    finding_id=finding_id("claim_fact_001"),
+                    action="Submit the cited material for human review and further discussion.",
+                )
+            ),
+        )
+    )
+    result = await make_orchestrator(gateway).orchestrate(
+        research_request(), existing_evidence=(evidence_item(),)
+    )
+    assert result.findings
+    assert result.recommendations == ()
+    assert "RECOMMENDATION_DOMAIN_IRRELEVANT" in result.limitations
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("domain", "action"),
+    (
+        (
+            ResearchDomain.TECHNOLOGY,
+            "Run a security and compatibility benchmark and submit PoC results for human review.",
+        ),
+        (
+            ResearchDomain.PROPERTY_BUSINESS,
+            "Run a pricing and unit economics scenario test for human commercial review.",
+        ),
+        (
+            ResearchDomain.MANAGEMENT,
+            "Draft an SOP and KPI control pilot for management review.",
+        ),
+        (
+            ResearchDomain.PROPERTY_MARKET,
+            "Run site due diligence and comparable sensitivity analysis for market review.",
+        ),
+    ),
+)
+async def test_four_domains_synthesize_substantive_recommendations(
+    domain: ResearchDomain, action: str
+) -> None:
+    item = evidence_item(f"evidence_{domain.value.lower()}")
+    gateway = SequenceGateway(
+        (
+            response(plan_payload(domain)),
+            response(claim_payload(fact(item.evidence_id))),
+            response(
+                recommendation_payload(
+                    finding_id=finding_id("claim_fact_001"),
+                    evidence_ids=(item.evidence_id,),
+                    action=action,
+                )
+            ),
+        )
+    )
+    result = await make_orchestrator(gateway).orchestrate(
+        research_request(domain), existing_evidence=(item,)
+    )
+    assert type(make_orchestrator(gateway)) is ResearchOrchestrator
+    assert result.recommendations[0].proposed_action == action
+    assert result.recommendations[0].requires_human_review is True

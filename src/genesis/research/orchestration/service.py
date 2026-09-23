@@ -15,6 +15,7 @@ from genesis.research.decision import (
     ResearchRisk,
 )
 from genesis.research.models import ResearchDomain
+from genesis.research.orchestration.admission import ResearchEvidenceAdmissionPolicy
 from genesis.research.orchestration.builder import (
     CanonicalResearchProjector,
     FindingRecommendationBuilder,
@@ -25,10 +26,13 @@ from genesis.research.orchestration.models import (
     ClaimAssessment,
     ClaimKind,
     DelegatedResearchInput,
+    EvidenceAdmissionAssessment,
+    EvidenceRelevance,
     EvidenceUsability,
     ResearchEvidenceItem,
     ResearchOrchestrationFailure,
     ResearchOrchestrationResult,
+    ResearchRecommendationAnalysis,
     RetrievalAttempt,
     RetrievalStatus,
     SourceMode,
@@ -42,6 +46,10 @@ from genesis.research.orchestration.provider import (
     ResearchRetrievalRequest,
 )
 from genesis.research.orchestration.quality import EvidenceQualityPolicy
+from genesis.research.orchestration.recommendations import (
+    ResearchRecommendationSynthesizer,
+)
+from genesis.research.orchestration.relevance import EvidenceRelevancePolicy
 from genesis.research.sources import FreshnessStatus, SourceReliability
 from genesis.research.tool_selection import (
     AuthorizedResearchTool,
@@ -66,6 +74,7 @@ class ResearchOrchestrator:
         contracts: CanonicalContractCatalog,
         question_planner: ResearchQuestionPlanner,
         claim_extractor: ResearchClaimExtractor,
+        recommendation_synthesizer: ResearchRecommendationSynthesizer,
         evidence_provider: ResearchEvidenceProvider | None = None,
         quality_policy: EvidenceQualityPolicy | None = None,
         comparison: ClaimComparisonIntelligence | None = None,
@@ -74,8 +83,11 @@ class ResearchOrchestrator:
         self._contracts = contracts
         self._question_planner = question_planner
         self._claim_extractor = claim_extractor
+        self._recommendation_synthesizer = recommendation_synthesizer
         self._provider = evidence_provider
         self._quality = quality_policy or EvidenceQualityPolicy()
+        self._admission = ResearchEvidenceAdmissionPolicy(contracts=contracts)
+        self._relevance = EvidenceRelevancePolicy()
         self._comparison = comparison or ClaimComparisonIntelligence()
         self._builder = builder or FindingRecommendationBuilder()
         self._tool_policy = ResearchToolSelectionPolicy(
@@ -117,20 +129,30 @@ class ResearchOrchestrator:
             data_classification=str(context["data_classification"]),
             budget=budget,
         )
-        evidence: list[ResearchEvidenceItem] = [*existing_evidence, *memory_evidence]
+        raw_evidence: list[ResearchEvidenceItem] = [*existing_evidence, *memory_evidence]
         limitations: list[str] = list(planned.plan.limitations)
         for child in delegated_inputs:
             if child.status == "COMPLETED" and child.validation_status == "VALID":
-                evidence.extend(child.evidence_items)
+                raw_evidence.extend(child.evidence_items)
             else:
                 limitations.append(f"CHILD_{child.child_task_id}_{child.status}_NOT_PROMOTED")
+        admissions: list[EvidenceAdmissionAssessment] = []
+        evidence = self._admit_items(raw_evidence, context, admissions, limitations)
         evidence = self._bounded_unique(evidence)
         attempts: list[RetrievalAttempt] = []
+        reserved_retrieval_cost = 0.0
+        reserved_external_retrieval_cost = 0.0
         for subquery in planned.plan.subqueries:
+            subquery_relevance = tuple(
+                self._relevance.assess(item, subquery) for item in evidence
+            )
+            satisfying_ids = {
+                item.evidence_id
+                for item in subquery_relevance
+                if item.relevance in {EvidenceRelevance.EXACT, EvidenceRelevance.RELEVANT}
+            }
             relevant = tuple(
-                item
-                for item in evidence
-                if not item.subquery_ids or subquery.subquery_id in item.subquery_ids
+                item for item in evidence if item.evidence_id in satisfying_ids
             )
             candidates = tuple(self._candidate(item, memory_evidence) for item in relevant)
             external_tool = next(
@@ -209,6 +231,60 @@ class ResearchOrchestrator:
                 )
                 limitations.append(f"{subquery.subquery_id}:RESEARCH_PROVIDER_UNAVAILABLE")
                 continue
+            selected_tool = next(
+                (
+                    item
+                    for item in authorized_tools
+                    if item.tool_id == selection.selected_tool_id
+                    and item.category is selection.selected_category
+                ),
+                None,
+            )
+            if selected_tool is None:
+                attempts.append(
+                    RetrievalAttempt(
+                        subquery_id=subquery.subquery_id,
+                        status=RetrievalStatus.DENIED,
+                        reason_codes=("SELECTED_TOOL_DESCRIPTOR_MISSING",),
+                    )
+                )
+                limitations.append(
+                    f"{subquery.subquery_id}:SELECTED_TOOL_DESCRIPTOR_MISSING"
+                )
+                continue
+            projected_total = reserved_retrieval_cost + selected_tool.estimated_cost
+            projected_external = reserved_external_retrieval_cost + (
+                selected_tool.estimated_cost
+                if selected_tool.category is ResearchToolCategory.EXTERNAL_RESEARCH
+                else 0
+            )
+            exceeds_generic = (
+                maximum_tool_cost is not None and projected_total > maximum_tool_cost
+            )
+            exceeds_external = (
+                selected_tool.category is ResearchToolCategory.EXTERNAL_RESEARCH
+                and projected_external > maximum_external_cost
+            )
+            exceeds_run = (
+                budget.max_cost is not None
+                and planned.usage.estimated_cost + projected_total > budget.max_cost
+            )
+            if exceeds_generic or exceeds_external or exceeds_run:
+                attempts.append(
+                    RetrievalAttempt(
+                        subquery_id=subquery.subquery_id,
+                        tool_id=selection.selected_tool_id,
+                        category=selection.selected_category,
+                        status=RetrievalStatus.DENIED,
+                        reason_codes=("CUMULATIVE_RETRIEVAL_COST_LIMIT",),
+                    )
+                )
+                limitations.append(
+                    f"{subquery.subquery_id}:CUMULATIVE_RETRIEVAL_COST_LIMIT"
+                )
+                continue
+            reserved_retrieval_cost = projected_total
+            reserved_external_retrieval_cost = projected_external
             try:
                 retrieved = await self._provider.retrieve(
                     ResearchRetrievalRequest(
@@ -234,24 +310,39 @@ class ResearchOrchestrator:
                 )
                 retrieved_items = retrieved.items if status is RetrievalStatus.SUCCESS else ()
                 limitations.extend(retrieved.limitations)
+            admitted_retrieved = self._admit_items(
+                list(retrieved_items), context, admissions, limitations
+            )
             attempts.append(
                 RetrievalAttempt(
                     subquery_id=subquery.subquery_id,
                     tool_id=selection.selected_tool_id,
                     category=selection.selected_category,
                     status=status,
-                    evidence_ids=tuple(item.evidence_id for item in retrieved_items),
+                    evidence_ids=tuple(item.evidence_id for item in admitted_retrieved),
                     reason_codes=reason_codes,
                 )
             )
             if status is not RetrievalStatus.SUCCESS:
                 limitations.append(f"{subquery.subquery_id}:RETRIEVAL_{status.value}")
-            evidence = self._bounded_unique([*evidence, *retrieved_items])
+            evidence = self._bounded_unique([*evidence, *admitted_retrieved])
 
         assessments = tuple(self._quality.assess(item, context) for item in evidence)
+        relevance_assessments = tuple(
+            self._relevance.assess(item, subquery)
+            for subquery in planned.plan.subqueries
+            for item in evidence
+        )
+        reasoning_ids = {
+            item.evidence_id
+            for item in relevance_assessments
+            if item.relevance
+            in {EvidenceRelevance.EXACT, EvidenceRelevance.RELEVANT, EvidenceRelevance.WEAK}
+        }
         usable = tuple(
             item
             for item in evidence
+            if item.evidence_id in reasoning_ids
             if next(
                 assessment
                 for assessment in assessments
@@ -260,6 +351,15 @@ class ResearchOrchestrator:
             is not EvidenceUsability.EXCLUDED
         )
         if usable:
+            model_budget = budget.model_copy(
+                update={
+                    "max_cost": (
+                        None
+                        if budget.max_cost is None
+                        else max(0.0, budget.max_cost - reserved_retrieval_cost)
+                    )
+                }
+            )
             extracted = await self._claim_extractor.extract(
                 plan=planned.plan,
                 evidence_items=usable,
@@ -267,7 +367,7 @@ class ResearchOrchestrator:
                 run_id=str(request["run_id"]),
                 correlation_id=correlation_id,
                 data_classification=str(context["data_classification"]),
-                budget=budget,
+                budget=model_budget,
                 prior_usage=planned.usage,
             )
             claims = extracted.claims
@@ -290,7 +390,7 @@ class ResearchOrchestrator:
             usage = planned.usage
             limitations.append("INSUFFICIENT_USABLE_EVIDENCE")
         duplicates, corroborations, conflicts = self._comparison.compare(claims, assessments)
-        findings, recommendations = self._builder.build(
+        findings = self._builder.build_findings(
             domain=domain,
             claims=claims,
             conflicts=conflicts,
@@ -300,6 +400,35 @@ class ResearchOrchestrator:
         limitations.extend(
             limitation for conflict in conflicts for limitation in conflict.limitations
         )
+        recommendations: tuple[ResearchRecommendationAnalysis, ...] = ()
+        if findings:
+            model_budget = budget.model_copy(
+                update={
+                    "max_cost": (
+                        None
+                        if budget.max_cost is None
+                        else max(0.0, budget.max_cost - reserved_retrieval_cost)
+                    )
+                }
+            )
+            try:
+                synthesized = await self._recommendation_synthesizer.synthesize(
+                    domain=domain,
+                    findings=findings,
+                    claims=claims,
+                    conflicts=conflicts,
+                    evidence_items=usable,
+                    run_id=str(request["run_id"]),
+                    correlation_id=correlation_id,
+                    data_classification=str(context["data_classification"]),
+                    budget=model_budget,
+                    prior_usage=usage,
+                )
+            except ResearchOrchestrationFailure as exc:
+                limitations.append(exc.code)
+            else:
+                recommendations = synthesized.recommendations
+                usage = usage.add(synthesized.usage)
         canonical = self._projector.project(
             request=request,
             findings=findings,
@@ -312,6 +441,8 @@ class ResearchOrchestrator:
             source_mode=self._source_mode(usable),
             retrieval_attempts=tuple(attempts),
             evidence_items=usable,
+            evidence_admissions=tuple(admissions),
+            relevance_assessments=relevance_assessments,
             evidence_assessments=assessments,
             claims=claims,
             duplicates=duplicates,
@@ -324,7 +455,29 @@ class ResearchOrchestrator:
             canonical_result=canonical,
             limitations=tuple(dict.fromkeys(limitations)),
             usage=usage,
+            reserved_retrieval_cost=reserved_retrieval_cost,
+            reserved_external_retrieval_cost=reserved_external_retrieval_cost,
         )
+
+    def _admit_items(
+        self,
+        items: list[ResearchEvidenceItem],
+        context: Mapping[str, object],
+        admissions: list[EvidenceAdmissionAssessment],
+        limitations: list[str],
+    ) -> list[ResearchEvidenceItem]:
+        admitted: list[ResearchEvidenceItem] = []
+        for item in items:
+            candidate, assessment = self._admission.admit(item, context)
+            admissions.append(assessment)
+            if candidate is None:
+                limitations.extend(
+                    f"{assessment.evidence_id}:{reason}"
+                    for reason in assessment.reason_codes
+                )
+                continue
+            admitted.append(candidate)
+        return admitted
 
     @staticmethod
     def _candidate(

@@ -13,6 +13,13 @@
 - Candidate findings/recommendations with conservative confidence caps and
   mandatory human review.
 - Exact validation against the existing canonical `ResearchResult` contract.
+- Per-subquery deterministic evidence relevance, distinct from quality.
+- Central canonical EvidenceRef admission across Context, Memory, child, and
+  provider ingestion.
+- Evidence-bound, domain-guided recommendation synthesis with cumulative model
+  usage and fail-closed citation/authority validation.
+- Multi-conflict preservation, relevant-assumption mapping, and conservative
+  cumulative retrieval-cost estimates.
 
 ## Backend integration contract for H9
 
@@ -32,6 +39,13 @@ The adapter must preserve:
 - explicit FAILED, TIMEOUT, DENIED, and NO_RESULT outcomes;
 - no implicit retry, version substitution, or fabricated evidence.
 
+Every provider item must be a canonical EvidenceRef. GENESIS re-validates it as
+defense in depth before any model reasoning; malformed siblings are excluded
+without repairing lineage. Backend remains authoritative for provider access,
+actual retrieval cost, persistent evidence/citation records, and audit. The H7
+retrieval ledger is only a conservative local estimate and must not be treated
+as billing or authorization state.
+
 Backend later owns durable source registration, research/audit records, approval
 state, recommendation release, and any backlog conversion. Those operations are
 not implemented in GENESIS H7.
@@ -39,7 +53,8 @@ not implemented in GENESIS H7.
 ## Canonicalization status
 
 Contracts remain read-only at version 1.5.0. H7 planning, quality, claims,
-conflicts, and recommendation analysis are internal projections. Only the
+conflicts, relevance/admission assessments, retrieval reservations, and rich
+recommendation analysis are internal projections. Only the
 existing canonical `ResearchRequest`, context/evidence contracts, and
 `ResearchResult` cross the public boundary. If H9 needs public H7 projections,
 they require an explicit additive Contracts change rather than leaking internal
