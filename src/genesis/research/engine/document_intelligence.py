@@ -1,4 +1,4 @@
-"""Source-bound document intelligence adapted from MVP-1 semantic analysis."""
+"""Source-bound document intelligence."""
 
 from __future__ import annotations
 

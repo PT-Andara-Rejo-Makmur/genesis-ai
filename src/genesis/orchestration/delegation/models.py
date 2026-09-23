@@ -1,4 +1,4 @@
-"""Internal H6 delegation projections; none of these models are canonical contracts."""
+"""Internal delegation projections; none of these models are canonical contracts."""
 
 from __future__ import annotations
 

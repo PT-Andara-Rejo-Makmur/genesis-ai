@@ -1,4 +1,4 @@
-"""Deterministic and explainable H7 evidence relevance policy."""
+"""Deterministic and explainable research evidence relevance policy."""
 
 from __future__ import annotations
 
@@ -65,20 +65,15 @@ class EvidenceRelevancePolicy:
         question_tokens = self._tokens(subquery.question)
         ref = item.evidence_ref
         metadata = " ".join(
-            str(ref.get(field, ""))
-            for field in ("source_id", "anchor", "excerpt", "uri")
+            str(ref.get(field, "")) for field in ("source_id", "anchor", "excerpt", "uri")
         )
         metadata += " " + json.dumps(ref.get("metadata", {}), sort_keys=True, default=str)
         evidence_tokens = self._tokens(f"{item.content} {metadata} {item.memory_ref or ''}")
         overlap = question_tokens.intersection(evidence_tokens)
         ratio = len(overlap) / max(1, len(question_tokens))
         need_overlap = _NEED_HINTS[subquery.evidence_need].intersection(evidence_tokens)
-        profile_tokens = self._tokens(
-            " ".join(domain_profile(subquery.domain).expected_evidence)
-        )
-        domain_overlap = question_tokens.intersection(profile_tokens).intersection(
-            evidence_tokens
-        )
+        profile_tokens = self._tokens(" ".join(domain_profile(subquery.domain).expected_evidence))
+        domain_overlap = question_tokens.intersection(profile_tokens).intersection(evidence_tokens)
 
         if len(overlap) >= 2 and (ratio >= 0.2 or need_overlap or domain_overlap):
             score = min(0.9, 0.45 + ratio + 0.05 * len(need_overlap | domain_overlap))

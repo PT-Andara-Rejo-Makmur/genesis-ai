@@ -1,4 +1,4 @@
-"""Non-authoritative cancellation and trace defaults for H5 AI."""
+"""Non-authoritative cancellation and trace defaults for agentic execution."""
 
 from genesis.runtime.agentic.models import AgenticRuntimeState, StopReason
 

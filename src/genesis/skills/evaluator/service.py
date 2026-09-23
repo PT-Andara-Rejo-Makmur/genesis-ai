@@ -11,7 +11,7 @@ from genesis.skills.loader import SkillDefinition
 from genesis.skills.selection import SkillCandidateOutcome, SkillSelectionStatus
 
 
-class EvaluationOutcome(StrEnum):
+class SkillEvaluationOutcome(StrEnum):
     PASS = "PASS"  # noqa: S105 - evaluation outcome, not a credential
     FAIL = "FAIL"
 
@@ -19,7 +19,7 @@ class EvaluationOutcome(StrEnum):
 class EvaluationCheck(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     check_id: str
-    outcome: EvaluationOutcome
+    outcome: SkillEvaluationOutcome
     reason: str = Field(min_length=1)
 
 
@@ -68,7 +68,7 @@ class SkillEvaluator:
         )
         criteria = outcome.descriptor.specification.evaluation if outcome.descriptor else ()
         return SkillEvaluation(
-            passed=all(item.outcome is EvaluationOutcome.PASS for item in checks),
+            passed=all(item.outcome is SkillEvaluationOutcome.PASS for item in checks),
             checks=checks,
             declared_criteria=criteria,
         )
@@ -151,7 +151,7 @@ class SkillEvaluator:
             )
         )
         return SkillEvaluation(
-            passed=all(item.outcome is EvaluationOutcome.PASS for item in checks),
+            passed=all(item.outcome is SkillEvaluationOutcome.PASS for item in checks),
             checks=tuple(checks),
             declared_criteria=specification.evaluation,
         )
@@ -160,6 +160,6 @@ class SkillEvaluator:
     def _check(check_id: str, passed: bool, reason: str) -> EvaluationCheck:
         return EvaluationCheck(
             check_id=check_id,
-            outcome=EvaluationOutcome.PASS if passed else EvaluationOutcome.FAIL,
+            outcome=SkillEvaluationOutcome.PASS if passed else SkillEvaluationOutcome.FAIL,
             reason=reason,
         )

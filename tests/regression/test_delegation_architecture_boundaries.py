@@ -1,11 +1,7 @@
 from pathlib import Path
 
 DELEGATION_ROOT = (
-    Path(__file__).resolve().parents[2]
-    / "src"
-    / "genesis"
-    / "orchestration"
-    / "delegation"
+    Path(__file__).resolve().parents[2] / "src" / "genesis" / "orchestration" / "delegation"
 )
 
 

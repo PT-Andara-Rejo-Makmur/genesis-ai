@@ -1,4 +1,4 @@
-"""Immutable, non-canonical H7 research intelligence projections."""
+"""Immutable, non-canonical research intelligence projections."""
 
 from __future__ import annotations
 
@@ -123,7 +123,6 @@ class ResearchEvidenceItem(BaseModel):
     @property
     def source_id(self) -> str:
         return str(self.evidence_ref.get("source_id", ""))
-
 
 
 class EvidenceAdmissionAssessment(BaseModel):
@@ -252,7 +251,7 @@ class RetrievalAttempt(BaseModel):
 
 
 class DelegatedResearchInput(BaseModel):
-    """Validated H6 child data projection; it never becomes instruction authority."""
+    """Validated child data projection; it never becomes instruction authority."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
     child_task_id: str = Field(min_length=3)
@@ -283,7 +282,7 @@ class ModelCallUsage(BaseModel):
 
 
 class ResearchOrchestrationResult(BaseModel):
-    """Rich H7 analysis. This is not a canonical Backend contract or authority."""
+    """Rich research analysis. This is not a canonical Backend contract or authority."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
     plan: ResearchPlan

@@ -1,4 +1,4 @@
-"""Pure document comparison intelligence adapted from MVP-1."""
+"""Pure document comparison intelligence."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""Strict, evidence-bound, non-authoritative H7 recommendation synthesis."""
+"""Strict, evidence-bound, non-authoritative research recommendation synthesis."""
 
 from __future__ import annotations
 
@@ -105,9 +105,7 @@ class ResearchRecommendationSynthesizer:
                 correlation_id,
             )
         maximum_tokens = min(1_200, remaining_tokens)
-        finding_fact_ids = {
-            claim_id for item in findings for claim_id in item.fact_claim_ids
-        }
+        finding_fact_ids = {claim_id for item in findings for claim_id in item.fact_claim_ids}
         facts = tuple(
             item
             for item in claims
@@ -117,8 +115,7 @@ class ResearchRecommendationSynthesizer:
         assumptions = tuple(
             item
             for item in claims
-            if item.kind is ClaimKind.ASSUMPTION
-            and item.normalized_topic in fact_topics
+            if item.kind is ClaimKind.ASSUMPTION and item.normalized_topic in fact_topics
         )
         relevant_conflict_ids = {
             conflict_id for item in findings for conflict_id in item.conflict_ids
@@ -150,7 +147,7 @@ class ResearchRecommendationSynthesizer:
             ModelRequest(
                 run_id=run_id,
                 correlation_id=correlation_id,
-                policy_ref="policy.h7.recommendation-synthesis.v1",
+                policy_ref="policy.research.recommendation-synthesis.v1",
                 purpose="evidence-bound-recommendation-synthesis",
                 data_classification=data_classification,
                 messages=(
@@ -177,8 +174,7 @@ class ResearchRecommendationSynthesizer:
                                     item.model_dump(mode="json") for item in assumptions
                                 ],
                                 "conflicts": [
-                                    item.model_dump(mode="json")
-                                    for item in relevant_conflicts
+                                    item.model_dump(mode="json") for item in relevant_conflicts
                                 ],
                                 "evidence": bounded_evidence,
                                 "instruction_authority": False,
@@ -285,11 +281,7 @@ class ResearchRecommendationSynthesizer:
                 dict.fromkeys(
                     (
                         *draft.limitations,
-                        *(
-                            limitation
-                            for item in cited_findings
-                            for limitation in item.limitations
-                        ),
+                        *(limitation for item in cited_findings for limitation in item.limitations),
                         "HUMAN_REVIEW_REQUIRED",
                     )
                 )
@@ -307,9 +299,7 @@ class ResearchRecommendationSynthesizer:
                     limitations=limitations,
                 )
             )
-        return SynthesizedRecommendations(
-            recommendations=tuple(recommendations), usage=usage
-        )
+        return SynthesizedRecommendations(recommendations=tuple(recommendations), usage=usage)
 
     @staticmethod
     def _resolve[T](

@@ -58,9 +58,7 @@ def factory_request(
 
 def test_capability_first_does_not_force_report_into_agent() -> None:
     result = factory().analyze(
-        factory_request(
-            "Buat laporan ringkas mengenai status operasional perusahaan saat ini"
-        )
+        factory_request("Buat laporan ringkas mengenai status operasional perusahaan saat ini")
     )
 
     assert result.resolution.understanding.recommended_type is CapabilityType.REPORT
@@ -114,9 +112,7 @@ def test_agent_factory_produces_canonical_draft_and_real_negative_expectation() 
 
 def test_missing_capabilities_are_explicit_dependencies() -> None:
     result = factory().analyze(
-        factory_request(
-            "Rancang agent untuk mencari dokumen dan membandingkan konflik kontrak"
-        )
+        factory_request("Rancang agent untuk mencari dokumen dan membandingkan konflik kontrak")
     )
 
     assert "document.read" in result.missing_dependencies

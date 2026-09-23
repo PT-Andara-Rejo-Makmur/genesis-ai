@@ -1,4 +1,4 @@
-"""Strict evidence-bound H7 claim extraction and lineage validation."""
+"""Strict evidence-bound research claim extraction and lineage validation."""
 
 from __future__ import annotations
 
@@ -89,9 +89,7 @@ class ResearchClaimExtractor:
                     "content": content,
                     "content_role": "EVIDENCE_DATA",
                     "instruction_authority": False,
-                    "quality": assessment_by_id[evidence_item.evidence_id].model_dump(
-                        mode="json"
-                    ),
+                    "quality": assessment_by_id[evidence_item.evidence_id].model_dump(mode="json"),
                 }
             )
         maximum_tokens = min(1_500, remaining_tokens)
@@ -99,7 +97,7 @@ class ResearchClaimExtractor:
             ModelRequest(
                 run_id=run_id,
                 correlation_id=correlation_id,
-                policy_ref="policy.h7.claim-extraction.v1",
+                policy_ref="policy.research.claim-extraction.v1",
                 purpose="evidence-bound-claim-extraction",
                 data_classification=data_classification,
                 messages=(
@@ -175,8 +173,7 @@ class ResearchClaimExtractor:
                     correlation_id,
                 )
             refs = [
-                evidence_by_id[evidence_id].evidence_ref
-                for evidence_id in claim_draft.evidence_ids
+                evidence_by_id[evidence_id].evidence_ref for evidence_id in claim_draft.evidence_ids
             ]
             cap = min(
                 (
@@ -194,9 +191,7 @@ class ResearchClaimExtractor:
                     evidence_ids=claim_draft.evidence_ids,
                     source_ids=tuple(dict.fromkeys(str(ref["source_id"]) for ref in refs)),
                     source_versions=tuple(
-                        dict.fromkeys(
-                            str(ref.get("source_version", "unknown")) for ref in refs
-                        )
+                        dict.fromkeys(str(ref.get("source_version", "unknown")) for ref in refs)
                     ),
                     confidence=cap,
                     limitations=("ASSUMPTION_REQUIRES_REVIEW",)

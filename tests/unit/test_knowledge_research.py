@@ -223,9 +223,7 @@ def test_memory_ranker_preserves_only_selected_evidence_lineage() -> None:
     ranked = EvidenceAwareRanker().rank(bundle, query="finance", max_items=1)
 
     assert ranked["items"][0]["evidence_id"] == "evidence_owner_001"
-    assert [item["evidence_id"] for item in ranked["evidence_refs"]] == [
-        "evidence_owner_001"
-    ]
+    assert [item["evidence_id"] for item in ranked["evidence_refs"]] == ["evidence_owner_001"]
 
 
 def test_document_comparison_adapts_mvp1_negative_findings() -> None:

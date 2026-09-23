@@ -22,9 +22,7 @@ def test_broad_actor_permissions_do_not_expand_create_proposal_permissions() -> 
         ),
     )
 
-    result = CapabilityFactory(
-        contracts=CanonicalContractCatalog(CONTRACTS_ROOT)
-    ).analyze(
+    result = CapabilityFactory(contracts=CanonicalContractCatalog(CONTRACTS_ROOT)).analyze(
         FactoryAnalysisRequest.model_validate(
             {
                 "requirement": {

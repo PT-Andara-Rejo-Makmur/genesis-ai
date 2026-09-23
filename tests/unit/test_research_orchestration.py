@@ -14,7 +14,7 @@ from genesis.research.decision import ResearchRisk
 from genesis.research.engine import ResearchEngine
 from genesis.research.models import ResearchDomain
 from genesis.research.orchestration import (
-    H7_DEFAULT_MODEL_TOKEN_BUDGET,
+    DEFAULT_RESEARCH_MODEL_TOKEN_BUDGET,
     ClaimAssessment,
     ClaimComparisonIntelligence,
     ClaimKind,
@@ -58,9 +58,7 @@ class SequenceGateway:
         if not self.responses and request.purpose == "evidence-bound-recommendation-synthesis":
             payload = json.loads(str(request.messages[-1]["content"]))
             finding = payload["findings"][0]
-            facts = {
-                item["claim_id"]: item for item in payload["fact_claims"]
-            }
+            facts = {item["claim_id"]: item for item in payload["fact_claims"]}
             fact_ids = finding["fact_claim_ids"]
             topics = {facts[item]["normalized_topic"] for item in fact_ids}
             assumptions = [
@@ -73,7 +71,7 @@ class SequenceGateway:
                 {
                     "recommendations": [
                         {
-                            "recommendation_id": "recommendation_h7_test_001",
+                            "recommendation_id": "recommendation_research_test_001",
                             "finding_ids": [finding["finding_id"]],
                             "fact_claim_ids": fact_ids,
                             "conflict_ids": finding["conflict_ids"],
@@ -109,7 +107,7 @@ class FakeProvider:
 def response(payload: Any, *, tokens: int = 10, cost: float = 0.1) -> ModelResponse:
     return ModelResponse(
         content=json.dumps(payload),
-        route_id="route.h7.test",
+        route_id="route.research.test",
         input_tokens=tokens // 2,
         output_tokens=tokens - tokens // 2,
         cost=cost,
@@ -164,7 +162,7 @@ def recommendation_payload(
     return {
         "recommendations": [
             {
-                "recommendation_id": "recommendation_h7_delta_001",
+                "recommendation_id": "recommendation_research_delta_001",
                 "finding_ids": [finding_id],
                 "fact_claim_ids": list(fact_claim_ids),
                 "conflict_ids": list(conflict_ids),
@@ -218,16 +216,16 @@ def research_request(
     permission_refs: Sequence[str] = ("research.external.read",),
 ) -> dict[str, Any]:
     result: dict[str, Any] = {
-        "research_id": "research_h7_001",
-        "run_id": "run_h7_001",
-        "correlation_id": "corr_h7_001",
+        "research_id": "research_research_001",
+        "run_id": "run_research_001",
+        "correlation_id": "corr_research_001",
         "domain": domain.value,
         "question": "What should PT ARM evaluate?",
         "execution_context": {
-            "tenant_id": "tenant_h7_001",
-            "organization_id": "organization_h7_001",
-            "workspace_id": "workspace_h7_001",
-            "actor_id": "actor_h7_001",
+            "tenant_id": "tenant_research_001",
+            "organization_id": "organization_research_001",
+            "workspace_id": "workspace_research_001",
+            "actor_id": "actor_research_001",
             "authority_context": {
                 "role": "researcher",
                 "authority_level": "REQUESTER",
@@ -236,7 +234,7 @@ def research_request(
             "allowed_tool_ids": list(allowed_tools),
             "scope_refs": ["scope.research"],
             "data_classification": classification,
-            "correlation_id": "corr_h7_001",
+            "correlation_id": "corr_research_001",
             "execution_budget": {
                 "max_tokens": 4_000,
                 "max_cost": 4,
@@ -262,11 +260,11 @@ def evidence_ref(
     **changes: Any,
 ) -> dict[str, Any]:
     result: dict[str, Any] = {
-        "tenant_id": "tenant_h7_001",
-        "organization_id": "organization_h7_001",
-        "workspace_id": "workspace_h7_001",
-        "run_id": "run_h7_001",
-        "correlation_id": "corr_h7_001",
+        "tenant_id": "tenant_research_001",
+        "organization_id": "organization_research_001",
+        "workspace_id": "workspace_research_001",
+        "run_id": "run_research_001",
+        "correlation_id": "corr_research_001",
         "scope_refs": ["scope.research"],
         "evidence_id": evidence_id,
         "source_id": source_id,
@@ -311,17 +309,17 @@ def evidence_item(
 def context_bundle(item: ResearchEvidenceItem) -> dict[str, Any]:
     ref = item.evidence_ref
     return {
-        "context_id": "context_h7_001",
-        "tenant_id": "tenant_h7_001",
-        "organization_id": "organization_h7_001",
-        "workspace_id": "workspace_h7_001",
-        "actor_id": "actor_h7_001",
-        "correlation_id": "corr_h7_001",
+        "context_id": "context_research_001",
+        "tenant_id": "tenant_research_001",
+        "organization_id": "organization_research_001",
+        "workspace_id": "workspace_research_001",
+        "actor_id": "actor_research_001",
+        "correlation_id": "corr_research_001",
         "scope_refs": ["scope.research"],
         "created_at": "2026-09-22T10:00:00Z",
         "items": [
             {
-                "key": "h7-evidence",
+                "key": "research-evidence",
                 "value": item.content,
                 "source_id": ref["source_id"],
                 "evidence_id": ref["evidence_id"],
@@ -361,9 +359,7 @@ def make_orchestrator(
             model_gateway=gateway, max_subqueries=max_subqueries
         ),
         claim_extractor=ResearchClaimExtractor(model_gateway=gateway),
-        recommendation_synthesizer=ResearchRecommendationSynthesizer(
-            model_gateway=gateway
-        ),
+        recommendation_synthesizer=ResearchRecommendationSynthesizer(model_gateway=gateway),
         evidence_provider=provider,
     )
 
@@ -669,13 +665,13 @@ async def test_invalid_plan_json_and_scope_expansion_fail_closed() -> None:
 
 
 @pytest.mark.asyncio
-async def test_memory_and_h6_child_inputs_preserve_scope_and_completion_policy() -> None:
+async def test_memory_and_delegation_child_inputs_preserve_scope_and_completion_policy() -> None:
     memory = evidence_item(
         "evidence_memory_001",
         category=ResearchToolCategory.MEMORY,
         reliability="MEDIUM",
     )
-    child = evidence_item("evidence_child_001", child_task_id="child_task_h7_001")
+    child = evidence_item("evidence_child_001", child_task_id="child_task_research_001")
     gateway = SequenceGateway(
         (
             response(plan_payload(ResearchDomain.TECHNOLOGY)),
@@ -692,13 +688,13 @@ async def test_memory_and_h6_child_inputs_preserve_scope_and_completion_policy()
         memory_evidence=(memory,),
         delegated_inputs=(
             DelegatedResearchInput(
-                child_task_id="child_task_h7_001",
+                child_task_id="child_task_research_001",
                 status="COMPLETED",
                 validation_status="VALID",
                 evidence_items=(child,),
             ),
             DelegatedResearchInput(
-                child_task_id="child_task_h7_failed",
+                child_task_id="child_task_research_failed",
                 status="FAILED",
                 validation_status="VALID",
                 evidence_items=(evidence_item("evidence_failed_child"),),
@@ -710,7 +706,7 @@ async def test_memory_and_h6_child_inputs_preserve_scope_and_completion_policy()
         "evidence_memory_001",
         "evidence_child_001",
     }
-    assert "CHILD_child_task_h7_failed_FAILED_NOT_PROMOTED" in result.limitations
+    assert "CHILD_child_task_research_failed_FAILED_NOT_PROMOTED" in result.limitations
 
 
 @pytest.mark.asyncio
@@ -726,9 +722,7 @@ async def test_four_domains_use_one_orchestrator_and_canonical_projection(
         )
     )
     orchestrator = make_orchestrator(gateway)
-    result = await orchestrator.orchestrate(
-        research_request(domain), existing_evidence=(item,)
-    )
+    result = await orchestrator.orchestrate(research_request(domain), existing_evidence=(item,))
     assert type(orchestrator) is ResearchOrchestrator
     assert result.plan.domain is domain
     assert result.plan.subqueries[0].evidence_need.value == "RISK"
@@ -796,14 +790,14 @@ def test_builder_never_creates_finding_from_assumption_or_gap_only() -> None:
             confidence=0.1,
         ),
     )
-    findings, recommendations = FindingRecommendationBuilder().build(
+    findings = FindingRecommendationBuilder().build_findings(
         domain=ResearchDomain.TECHNOLOGY,
         claims=claims,
         conflicts=(),
         corroborations=(),
         assessments=(),
     )
-    assert findings == () and recommendations == ()
+    assert findings == ()
 
 
 def test_relevance_is_deterministic_and_subquery_specific() -> None:
@@ -842,9 +836,7 @@ def test_relevance_is_deterministic_and_subquery_specific() -> None:
 
 def test_explicit_relevance_binding_has_precedence() -> None:
     policy = EvidenceRelevancePolicy()
-    target = ResearchSubquery.model_validate(
-        subquery(ResearchDomain.TECHNOLOGY, "subquery_target")
-    )
+    target = ResearchSubquery.model_validate(subquery(ResearchDomain.TECHNOLOGY, "subquery_target"))
     ambiguous = evidence_item(
         subquery_ids=("subquery_target",),
         content="No lexical relationship is required for explicit binding.",
@@ -900,9 +892,7 @@ def test_context_projection_remains_untagged_and_relevance_aware() -> None:
 def test_canonical_evidence_admission_rejects_malformed_or_expanded_refs(
     changes: dict[str, Any], reason: str
 ) -> None:
-    policy = ResearchEvidenceAdmissionPolicy(
-        contracts=CanonicalContractCatalog(CONTRACTS_ROOT)
-    )
+    policy = ResearchEvidenceAdmissionPolicy(contracts=CanonicalContractCatalog(CONTRACTS_ROOT))
     admitted, assessment = policy.admit(
         evidence_item(**changes), research_request()["execution_context"]
     )
@@ -1021,9 +1011,7 @@ async def test_recommendation_failure_preserves_findings_and_rejects_unknown_ass
     gateway = SequenceGateway(
         (
             response(plan_payload(ResearchDomain.TECHNOLOGY)),
-            response(
-                claim_payload(fact("evidence_internal_001"), relevant_assumption)
-            ),
+            response(claim_payload(fact("evidence_internal_001"), relevant_assumption)),
             response(
                 recommendation_payload(
                     finding_id=finding_id("claim_fact_001"),
@@ -1081,9 +1069,7 @@ async def test_recommendation_maps_only_relevant_assumption_and_accounts_usage()
     result = await make_orchestrator(gateway).orchestrate(
         research_request(), existing_evidence=(evidence_item(),)
     )
-    assert result.recommendations[0].assumption_ids == (
-        "claim_assumption_relevant",
-    )
+    assert result.recommendations[0].assumption_ids == ("claim_assumption_relevant",)
     assert result.usage.total_tokens == 36
     assert result.usage.estimated_cost == pytest.approx(0.6)
     assert len(gateway.requests) == 3
@@ -1091,15 +1077,11 @@ async def test_recommendation_maps_only_relevant_assumption_and_accounts_usage()
 
 def test_one_claim_preserves_multiple_conflicts_deterministically() -> None:
     item = evidence_item()
-    quality = EvidenceQualityPolicy().assess(
-        item, research_request()["execution_context"]
-    )
+    quality = EvidenceQualityPolicy().assess(item, research_request()["execution_context"])
     primary = assessed_claim(
         "claim_primary", "Finance owns policy.", item.evidence_id, "source_a", "1"
     )
-    other = assessed_claim(
-        "claim_other", "Legal owns policy.", item.evidence_id, "source_a", "2"
-    )
+    other = assessed_claim("claim_other", "Legal owns policy.", item.evidence_id, "source_a", "2")
     conflicts = (
         ConflictAssessment(
             conflict_id="conflict_b",
@@ -1168,8 +1150,7 @@ async def test_cumulative_external_retrieval_cost_blocks_second_provider_call() 
 
 
 @pytest.mark.asyncio
-async def test_generic_retrieval_cost_is_cumulative_and_external_zero_does_not_block_connector(
-) -> None:
+async def test_retrieval_cost_is_cumulative_and_zero_external_budget_allows_connector() -> None:
     first = evidence_item(
         "evidence_first_connector",
         category=ResearchToolCategory.CONNECTOR,
@@ -1216,9 +1197,7 @@ async def test_recommendation_budget_exhaustion_skips_third_model_call() -> None
     gateway = SequenceGateway(
         (
             response(plan_payload(ResearchDomain.TECHNOLOGY), tokens=10),
-            response(
-                claim_payload(fact("evidence_internal_001")), tokens=10
-            ),
+            response(claim_payload(fact("evidence_internal_001")), tokens=10),
         )
     )
     result = await make_orchestrator(gateway).orchestrate(
@@ -1238,7 +1217,7 @@ async def test_recommendation_budget_exhaustion_skips_third_model_call() -> None
         {"max_steps": 3},
     ),
 )
-async def test_optional_canonical_token_limit_uses_finite_h7_default(
+async def test_optional_canonical_token_limit_uses_finite_research_default(
     execution_budget: dict[str, int],
 ) -> None:
     request = research_request()
@@ -1257,7 +1236,7 @@ async def test_optional_canonical_token_limit_uses_finite_h7_default(
     assert result.usage.total_tokens == 32
     assert all(item.requested_max_tokens is not None for item in gateway.requests)
     assert all(item.budget.max_tokens is not None for item in gateway.requests)
-    assert result.usage.total_tokens <= H7_DEFAULT_MODEL_TOKEN_BUDGET
+    assert result.usage.total_tokens <= DEFAULT_RESEARCH_MODEL_TOKEN_BUDGET
 
 
 @pytest.mark.asyncio
@@ -1293,9 +1272,7 @@ async def test_explicit_token_limit_remains_authoritative_and_cumulative() -> No
 async def test_small_explicit_token_limit_caps_planner_request() -> None:
     request = research_request()
     request["execution_context"]["execution_budget"] = {"max_tokens": 5}
-    gateway = SequenceGateway(
-        (response(plan_payload(ResearchDomain.TECHNOLOGY), tokens=5),)
-    )
+    gateway = SequenceGateway((response(plan_payload(ResearchDomain.TECHNOLOGY), tokens=5),))
     result = await make_orchestrator(gateway).orchestrate(request)
     assert result.findings == ()
     assert len(gateway.requests) == 1
@@ -1327,7 +1304,7 @@ async def test_local_default_bounds_cumulative_three_stage_usage() -> None:
         request, existing_evidence=(evidence_item(),)
     )
     assert result.usage.total_tokens == 3_700
-    assert result.usage.total_tokens <= H7_DEFAULT_MODEL_TOKEN_BUDGET
+    assert result.usage.total_tokens <= DEFAULT_RESEARCH_MODEL_TOKEN_BUDGET
     assert [item.requested_max_tokens for item in gateway.requests] == [
         1_000,
         1_500,
@@ -1342,9 +1319,7 @@ async def test_cost_only_budget_keeps_token_fallback_and_cost_authority() -> Non
     gateway = SequenceGateway(
         (
             response(plan_payload(ResearchDomain.TECHNOLOGY), tokens=10, cost=0.2),
-            response(
-                claim_payload(fact("evidence_internal_001")), tokens=10, cost=0.2
-            ),
+            response(claim_payload(fact("evidence_internal_001")), tokens=10, cost=0.2),
             response(
                 recommendation_payload(
                     finding_id=finding_id("claim_fact_001"),

@@ -1,4 +1,4 @@
-"""Internal H6 delegation planning and validation boundary."""
+"""Internal delegation planning and validation boundary."""
 
 from genesis.orchestration.delegation.boundary import DelegationBoundaryClient
 from genesis.orchestration.delegation.guard import DelegationDenied, DelegationGuard

@@ -1,8 +1,8 @@
-"""Internal H7 research orchestration; not a canonical contract surface."""
+"""Internal research orchestration; not a canonical contract surface."""
 
 from genesis.research.orchestration.admission import ResearchEvidenceAdmissionPolicy
 from genesis.research.orchestration.budget import (
-    H7_DEFAULT_MODEL_TOKEN_BUDGET,
+    DEFAULT_RESEARCH_MODEL_TOKEN_BUDGET,
     effective_model_token_limit,
     remaining_model_tokens,
 )
@@ -59,7 +59,7 @@ from genesis.research.orchestration.service import (
 )
 
 __all__ = [
-    "H7_DEFAULT_MODEL_TOKEN_BUDGET",
+    "DEFAULT_RESEARCH_MODEL_TOKEN_BUDGET",
     "CanonicalResearchProjector",
     "ClaimAssessment",
     "ClaimComparisonIntelligence",

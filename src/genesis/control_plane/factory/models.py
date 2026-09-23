@@ -17,9 +17,9 @@ class AuthorityContext(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     role: str = Field(min_length=1)
     role_refs: tuple[str, ...] = ()
-    authority_level: Literal[
-        "REQUESTER", "OPERATOR", "IT_APPROVER", "DIRECTOR_APPROVER", "SYSTEM"
-    ] | None = None
+    authority_level: (
+        Literal["REQUESTER", "OPERATOR", "IT_APPROVER", "DIRECTOR_APPROVER", "SYSTEM"] | None
+    ) = None
 
 
 class FactoryExecutionContext(BaseModel):
@@ -70,8 +70,8 @@ class FactoryAnalysisRequest(BaseModel):
     capability_catalog: tuple[CapabilityCatalogItem, ...] = ()
 
 
-class AgentDraft(BaseModel):
-    """Canonical non-authoritative Agent draft for Backend governance."""
+class AgentDraftProposal(BaseModel):
+    """Canonical non-authoritative Agent draft projection for Backend governance."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
     draft_id: str = Field(min_length=3)
@@ -113,6 +113,6 @@ class FactoryAnalysisResult(BaseModel):
     resolution: CapabilityResolution
     existing_capability_refs: tuple[CapabilityCatalogItem, ...] = ()
     capability_draft: dict[str, Any] | None = None
-    agent_draft: AgentDraft | None = None
+    agent_draft: AgentDraftProposal | None = None
     missing_dependencies: tuple[str, ...]
     handoff: RegistryHandoff

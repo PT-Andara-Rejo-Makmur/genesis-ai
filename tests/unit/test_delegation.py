@@ -36,9 +36,9 @@ CONTRACTS_ROOT = Path(__file__).resolve().parents[3] / "alos-contracts"
 
 def authority(**changes: Any) -> AuthorityEnvelope:
     values: dict[str, Any] = {
-        "tenant_id": "tenant_h6_001",
-        "organization_id": "organization_h6_001",
-        "workspace_id": "workspace_h6_001",
+        "tenant_id": "tenant_delegation_001",
+        "organization_id": "organization_delegation_001",
+        "workspace_id": "workspace_delegation_001",
         "permission_refs": frozenset({"research.read", "documents.read"}),
         "scope_refs": frozenset({"scope.research", "scope.technology"}),
         "allowed_tool_ids": frozenset({"documents.search", "datasets.search"}),
@@ -92,9 +92,9 @@ def targets() -> tuple[AuthorizedChildTarget, ...]:
 def snapshot(**changes: Any) -> DelegationAuthorizationSnapshot:
     values: dict[str, Any] = {
         "enabled": True,
-        "parent_run_id": "run_parent_h6_001",
-        "root_run_id": "run_root_h6_001",
-        "parent_agent_id": "agent_parent_h6",
+        "parent_run_id": "run_parent_delegation_001",
+        "root_run_id": "run_root_delegation_001",
+        "parent_agent_id": "agent_parent_delegation",
         "parent_agent_version": "2.0.0",
         "parent_depth": 1,
         "ancestry_agent_refs": ("agent_root@1.0.0",),
@@ -121,9 +121,7 @@ def child_authority(**changes: Any) -> ChildAuthorityRequest:
         "budget": budget(max_tokens=40, max_cost=2, max_children=1, max_depth=2),
         "research_constraints": research_constraints(
             allowed_domains=frozenset({ResearchDomain.TECHNOLOGY}),
-            allowed_source_categories=frozenset(
-                {ResearchToolCategory.INTERNAL_DOCUMENT}
-            ),
+            allowed_source_categories=frozenset({ResearchToolCategory.INTERNAL_DOCUMENT}),
             data_classification_ceiling=DataClassification.INTERNAL,
         ),
     }
@@ -158,22 +156,20 @@ def intent(**changes: Any):  # type: ignore[no-untyped-def]
         requested_authority=child_authority(),
     )
     changed = planned.model_copy(update=changes)
-    return changed.model_copy(
-        update={"delegation_key": expected_delegation_key(changed)}
-    )
+    return changed.model_copy(update={"delegation_key": expected_delegation_key(changed)})
 
 
 def evidence(**changes: Any) -> dict[str, Any]:
     values: dict[str, Any] = {
-        "tenant_id": "tenant_h6_001",
-        "organization_id": "organization_h6_001",
-        "workspace_id": "workspace_h6_001",
-        "run_id": "run_child_h6_001",
-        "correlation_id": "corr_h6_001",
+        "tenant_id": "tenant_delegation_001",
+        "organization_id": "organization_delegation_001",
+        "workspace_id": "workspace_delegation_001",
+        "run_id": "run_child_delegation_001",
+        "correlation_id": "corr_delegation_001",
         "scope_refs": ["scope.research"],
-        "evidence_id": "evidence_child_h6_001",
-        "source_id": "source_child_h6_001",
-        "uri": "urn:alos:evidence:h6:1",
+        "evidence_id": "evidence_child_delegation_001",
+        "source_id": "source_child_delegation_001",
+        "uri": "urn:alos:evidence:delegation:1",
         "captured_at": "2026-09-22T09:00:00Z",
         "retrieved_at": "2026-09-22T09:00:00Z",
         "content_hash": "sha256:" + "a" * 64,
@@ -194,10 +190,10 @@ def evidence(**changes: Any) -> dict[str, Any]:
 
 def child_result(**changes: Any) -> dict[str, Any]:
     values: dict[str, Any] = {
-        "run_id": "run_child_h6_001",
-        "root_run_id": "run_root_h6_001",
-        "parent_run_id": "run_parent_h6_001",
-        "correlation_id": "corr_h6_001",
+        "run_id": "run_child_delegation_001",
+        "root_run_id": "run_root_delegation_001",
+        "parent_run_id": "run_parent_delegation_001",
+        "correlation_id": "corr_delegation_001",
         "agent_id": "agent_technology",
         "agent_version": "1.0.0",
         "capability_id": "capability.research",
@@ -251,9 +247,7 @@ def test_planner_preserves_structured_task_and_exact_target() -> None:
         ({"target_capability_id": "capability.other"}, "CHILD_CAPABILITY_DENIED"),
     ),
 )
-def test_lineage_depth_target_and_capability_fail_closed(
-    change: dict[str, Any], code: str
-) -> None:
+def test_lineage_depth_target_and_capability_fail_closed(change: dict[str, Any], code: str) -> None:
     with pytest.raises(DelegationDenied) as raised:
         DelegationGuard().validate(snapshot(), intent(**change))
     assert raised.value.code == code
@@ -315,7 +309,7 @@ def test_duplicate_child_count_cycle_and_reservations_are_bounded() -> None:
     cyclic = snapshot(
         allowed_child_targets=(
             AuthorizedChildTarget(
-                agent_id="agent_parent_h6",
+                agent_id="agent_parent_delegation",
                 agent_version="2.0.0",
                 capability_ids=("capability.research",),
                 research_domains=(ResearchDomain.TECHNOLOGY,),
@@ -324,7 +318,7 @@ def test_duplicate_child_count_cycle_and_reservations_are_bounded() -> None:
     )
     self_intent = DelegationPlanner().plan(
         snapshot=cyclic,
-        target_agent_id="agent_parent_h6",
+        target_agent_id="agent_parent_delegation",
         target_agent_version="2.0.0",
         capability_id="capability.research",
         task=task(),
@@ -354,14 +348,19 @@ def test_tampered_delegation_key_is_rejected() -> None:
 
 
 def test_different_material_task_has_different_key() -> None:
-    assert intent().delegation_key != DelegationPlanner().plan(
-        snapshot=snapshot(),
-        target_agent_id="agent_technology",
-        target_agent_version="1.0.0",
-        capability_id="capability.research",
-        task=task(child_task_id="child_task_technology_002", goal="Different goal"),
-        requested_authority=child_authority(),
-    ).delegation_key
+    assert (
+        intent().delegation_key
+        != DelegationPlanner()
+        .plan(
+            snapshot=snapshot(),
+            target_agent_id="agent_technology",
+            target_agent_version="1.0.0",
+            capability_id="capability.research",
+            task=task(child_task_id="child_task_technology_002", goal="Different goal"),
+            requested_authority=child_authority(),
+        )
+        .delegation_key
+    )
 
 
 @pytest.mark.parametrize(
@@ -410,9 +409,7 @@ def test_one_generic_policy_supports_all_research_domains(domain: ResearchDomain
         authority=child_authority(
             research_constraints=research_constraints(
                 allowed_domains=frozenset({domain}),
-                allowed_source_categories=frozenset(
-                    {ResearchToolCategory.INTERNAL_DOCUMENT}
-                ),
+                allowed_source_categories=frozenset({ResearchToolCategory.INTERNAL_DOCUMENT}),
                 data_classification_ceiling=DataClassification.INTERNAL,
             )
         ),
@@ -425,11 +422,11 @@ def test_one_generic_policy_supports_all_research_domains(domain: ResearchDomain
 
 def test_same_mechanism_structurally_supports_bounded_sub_child() -> None:
     child_snapshot = snapshot(
-        parent_run_id="run_child_h6_001",
+        parent_run_id="run_child_delegation_001",
         parent_agent_id="agent_technology",
         parent_agent_version="1.0.0",
         parent_depth=1,
-        ancestry_agent_refs=("agent_parent_h6@2.0.0",),
+        ancestry_agent_refs=("agent_parent_delegation@2.0.0",),
         allowed_child_targets=(
             AuthorizedChildTarget(
                 agent_id="agent_management",
@@ -452,9 +449,7 @@ def test_same_mechanism_structurally_supports_bounded_sub_child() -> None:
         requested_authority=child_authority(
             research_constraints=research_constraints(
                 allowed_domains=frozenset({ResearchDomain.MANAGEMENT}),
-                allowed_source_categories=frozenset(
-                    {ResearchToolCategory.INTERNAL_DOCUMENT}
-                ),
+                allowed_source_categories=frozenset({ResearchToolCategory.INTERNAL_DOCUMENT}),
                 data_classification_ceiling=DataClassification.INTERNAL,
             )
         ),
@@ -496,11 +491,11 @@ def test_canonical_child_result_identity_output_and_evidence_validate() -> None:
         child_result(),
         intent=intent(),
         target=technology_target(),
-        correlation_id="corr_h6_001",
+        correlation_id="corr_delegation_001",
         parent_authority=authority(),
     )
     assert observation.status == "COMPLETED"
-    assert observation.evidence_refs[0]["correlation_id"] == "corr_h6_001"
+    assert observation.evidence_refs[0]["correlation_id"] == "corr_delegation_001"
     assert observation.usage == {"input_tokens": 5, "output_tokens": 3}
 
 
@@ -510,7 +505,7 @@ def test_external_child_evidence_remains_untrusted_and_non_instructional() -> No
         child_result(evidence_refs=[external]),
         intent=intent(),
         target=technology_target(),
-        correlation_id="corr_h6_001",
+        correlation_id="corr_delegation_001",
         parent_authority=authority(),
     )
     assert observation.evidence_refs[0]["content_trust"] == "UNTRUSTED"
@@ -525,7 +520,7 @@ def test_canonical_child_failure_statuses_are_structured(status: str) -> None:
         error={
             "code": f"CHILD_{status}",
             "message": "child stopped safely",
-            "correlation_id": "corr_h6_001",
+            "correlation_id": "corr_delegation_001",
             "retryable": False,
         },
     )
@@ -534,7 +529,7 @@ def test_canonical_child_failure_statuses_are_structured(status: str) -> None:
         payload,
         intent=intent(),
         target=technology_target(),
-        correlation_id="corr_h6_001",
+        correlation_id="corr_delegation_001",
         parent_authority=authority(),
     )
     assert observation.status == status
@@ -559,7 +554,7 @@ def test_child_result_mismatch_fails_closed(change: dict[str, Any], code: str) -
             child_result(**change),
             intent=intent(),
             target=technology_target(),
-            correlation_id="corr_h6_001",
+            correlation_id="corr_delegation_001",
             parent_authority=authority(),
         )
     assert raised.value.code == code
@@ -582,7 +577,7 @@ def test_invalid_child_evidence_never_enters_parent(evidence_change: dict[str, A
             child_result(evidence_refs=[evidence(**evidence_change)]),
             intent=intent(),
             target=technology_target(),
-            correlation_id="corr_h6_001",
+            correlation_id="corr_delegation_001",
             parent_authority=authority(),
         )
 
@@ -639,7 +634,7 @@ def test_child_output_must_satisfy_exact_target_schema() -> None:
             child_result(),
             intent=intent(),
             target=target,
-            correlation_id="corr_h6_001",
+            correlation_id="corr_delegation_001",
             parent_authority=authority(),
         )
     assert raised.value.code == "CHILD_OUTPUT_TARGET_SCHEMA_INVALID"
@@ -657,7 +652,7 @@ def test_child_output_satisfying_task_and_target_schemas_is_accepted() -> None:
         child_result(),
         intent=intent(),
         target=target,
-        correlation_id="corr_h6_001",
+        correlation_id="corr_delegation_001",
         parent_authority=authority(),
     )
     assert observation.validation_status == "VALID"
@@ -669,7 +664,7 @@ def test_invalid_target_output_schema_fails_closed_during_result_validation() ->
             child_result(),
             intent=intent(),
             target=technology_target(output_schema={"type": "not-a-json-type"}),
-            correlation_id="corr_h6_001",
+            correlation_id="corr_delegation_001",
             parent_authority=authority(),
         )
     assert raised.value.code == "CHILD_TARGET_OUTPUT_SCHEMA_INVALID"
@@ -678,11 +673,7 @@ def test_invalid_target_output_schema_fails_closed_during_result_validation() ->
 @pytest.mark.parametrize(
     "changes",
     (
-        {
-            "allowed_source_categories": frozenset(
-                {ResearchToolCategory.EXTERNAL_RESEARCH}
-            )
-        },
+        {"allowed_source_categories": frozenset({ResearchToolCategory.EXTERNAL_RESEARCH})},
         {"maximum_external_cost": 1},
     ),
 )
@@ -737,8 +728,6 @@ def test_synthesis_is_deterministic_partial_and_preserves_success() -> None:
 
 
 def test_synthesis_marks_invalid_only_result_for_review() -> None:
-    result = DelegationSynthesizer().synthesize(
-        (observation("task_a", "FAILED", valid=False),)
-    )
+    result = DelegationSynthesizer().synthesize((observation("task_a", "FAILED", valid=False),))
     assert result.disposition is DelegationDisposition.NEEDS_REVIEW
     assert result.evidence_refs == ()

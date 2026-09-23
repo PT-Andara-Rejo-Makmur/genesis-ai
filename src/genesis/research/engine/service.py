@@ -84,6 +84,8 @@ class ResearchOutputInvalid(ValueError):
 
 
 class ResearchEngine:
+    """Canonical ResearchRequest-to-ResearchResult application facade."""
+
     def __init__(
         self,
         *,
@@ -208,9 +210,7 @@ class ResearchEngine:
                 )
 
     @staticmethod
-    def _references(
-        evidence_ids: list[str], evidence_by_id: Mapping[str, Any]
-    ) -> list[Any]:
+    def _references(evidence_ids: list[str], evidence_by_id: Mapping[str, Any]) -> list[Any]:
         unknown = [evidence_id for evidence_id in evidence_ids if evidence_id not in evidence_by_id]
         if unknown:
             raise ResearchOutputInvalid(
@@ -218,9 +218,7 @@ class ResearchEngine:
             )
         return [evidence_by_id[evidence_id] for evidence_id in evidence_ids]
 
-    def _finding(
-        self, item: _FindingDraft, evidence_by_id: Mapping[str, Any]
-    ) -> dict[str, Any]:
+    def _finding(self, item: _FindingDraft, evidence_by_id: Mapping[str, Any]) -> dict[str, Any]:
         result: dict[str, Any] = {
             "finding_id": item.finding_id,
             "finding_type": item.finding_type,

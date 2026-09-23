@@ -32,9 +32,7 @@ def decider() -> ExternalResearchDecider:
     return ExternalResearchDecider(contracts=CanonicalContractCatalog(CONTRACTS_ROOT))
 
 
-def evidence(
-    *, channel: ResearchChannel = ResearchChannel.INTERNAL_SOURCE
-) -> EvidenceCandidate:
+def evidence(*, channel: ResearchChannel = ResearchChannel.INTERNAL_SOURCE) -> EvidenceCandidate:
     return EvidenceCandidate(
         evidence_id="evidence_research_001",
         channel=channel,
@@ -176,7 +174,7 @@ def test_external_is_selected_only_when_governed_options_are_exhausted() -> None
     ],
 )
 def test_external_unavailable_unauthorized_or_over_cost_is_not_selected(
-    change: dict[str, Any]
+    change: dict[str, Any],
 ) -> None:
     external = tool(
         "research.external.retrieve",
@@ -195,9 +193,7 @@ def test_caller_supplied_internal_tool_can_fill_gap_when_external_disabled() -> 
         ResearchToolCategory.INTERNAL_DOCUMENT,
         permission_refs=("documents.read",),
     )
-    result = select(
-        decision_request(external=ExternalResearchBoundary(enabled=False)), internal
-    )
+    result = select(decision_request(external=ExternalResearchBoundary(enabled=False)), internal)
     assert result.kind is ResearchToolSelectionKind.SELECT_TOOL
     assert result.selected_category is ResearchToolCategory.INTERNAL_DOCUMENT
 

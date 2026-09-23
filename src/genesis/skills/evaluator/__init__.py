@@ -2,9 +2,9 @@
 
 from genesis.skills.evaluator.service import (
     EvaluationCheck,
-    EvaluationOutcome,
     SkillEvaluation,
+    SkillEvaluationOutcome,
     SkillEvaluator,
 )
 
-__all__ = ["EvaluationCheck", "EvaluationOutcome", "SkillEvaluation", "SkillEvaluator"]
+__all__ = ["EvaluationCheck", "SkillEvaluation", "SkillEvaluationOutcome", "SkillEvaluator"]

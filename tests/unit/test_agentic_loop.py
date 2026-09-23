@@ -137,9 +137,7 @@ class FakeToolClient:
         self.requests: list[dict[str, Any]] = []
         self.mutate: dict[str, Any] = {}
 
-    async def execute(
-        self, payload: dict[str, Any], *, correlation_id: str
-    ) -> dict[str, Any]:
+    async def execute(self, payload: dict[str, Any], *, correlation_id: str) -> dict[str, Any]:
         self.requests.append(dict(payload))
         status = self.statuses.pop(0)
         result: dict[str, Any] = {
@@ -168,10 +166,8 @@ class FakeDelegationClient:
         self.results = list(results)
         self.intents: list[DelegationIntent] = []
 
-    async def submit(
-        self, intent: DelegationIntent, *, correlation_id: str
-    ) -> dict[str, Any]:
-        assert correlation_id == "corr_h5_runtime_001"
+    async def submit(self, intent: DelegationIntent, *, correlation_id: str) -> dict[str, Any]:
+        assert correlation_id == "corr_agentic_runtime_001"
         self.intents.append(intent)
         result = self.results.pop(0)
         if isinstance(result, Exception):
@@ -235,14 +231,14 @@ class ThrowingObserver(TraceObserver):
 
 def definition(**changes: Any) -> AgentDefinition:
     value: dict[str, Any] = {
-        "agent_id": "agent_h5_runtime_001",
+        "agent_id": "agent_agentic_runtime_001",
         "agent_version": "1.0.0",
-        "name": "H5 Runtime",
+        "name": "Agentic Runtime",
         "purpose": "Execute a bounded governed workflow.",
-        "capability_ids": ("capability_h5_runtime",),
-        "allowed_tool_ids": ("diagnostic.echo", "diagnostic.second"),
+        "capability_ids": ("capability_agentic_runtime",),
+        "tool_ids": ("diagnostic.echo", "diagnostic.second"),
         "permission_refs": ("tools.diagnostic.execute",),
-        "scope_refs": ("scope.h5",),
+        "scope_refs": ("scope.runtime",),
         "model_policy_ref": "policy.runtime-test",
         "input_schema": {
             "type": "object",
@@ -263,15 +259,15 @@ def definition(**changes: Any) -> AgentDefinition:
 
 def evidence_ref(**changes: Any) -> dict[str, Any]:
     value = {
-        "tenant_id": "tenant_h5_001",
-        "organization_id": "organization_h5_001",
-        "workspace_id": "workspace_h5_001",
+        "tenant_id": "tenant_runtime_001",
+        "organization_id": "organization_runtime_001",
+        "workspace_id": "workspace_runtime_001",
         "run_id": "run_origin_001",
         "correlation_id": "corr_origin_001",
-        "scope_refs": ["scope.h5"],
-        "evidence_id": "evidence_h5_001",
-        "source_id": "source_h5_001",
-        "uri": "urn:alos:evidence:h5:1",
+        "scope_refs": ["scope.runtime"],
+        "evidence_id": "evidence_runtime_001",
+        "source_id": "source_runtime_001",
+        "uri": "urn:alos:evidence:runtime:1",
         "captured_at": "2026-09-22T09:00:00Z",
         "retrieved_at": "2026-09-22T09:00:00Z",
         "content_hash": "sha256:" + "a" * 64,
@@ -301,22 +297,22 @@ def run_request(
     with_evidence: bool = False,
 ) -> dict[str, Any]:
     request: dict[str, Any] = {
-        "run_id": "run_h5_runtime_001",
-        "root_run_id": "run_h5_runtime_001",
-        "agent_id": "agent_h5_runtime_001",
+        "run_id": "run_agentic_runtime_001",
+        "root_run_id": "run_agentic_runtime_001",
+        "agent_id": "agent_agentic_runtime_001",
         "agent_version": "1.0.0",
-        "capability_id": "capability_h5_runtime",
+        "capability_id": "capability_agentic_runtime",
         "execution_context": {
-            "tenant_id": "tenant_h5_001",
-            "organization_id": "organization_h5_001",
-            "workspace_id": "workspace_h5_001",
-            "actor_id": "actor_h5_001",
+            "tenant_id": "tenant_runtime_001",
+            "organization_id": "organization_runtime_001",
+            "workspace_id": "workspace_runtime_001",
+            "actor_id": "actor_runtime_001",
             "authority_context": {"role": "researcher", "authority_level": "REQUESTER"},
             "permission_refs": ["tools.diagnostic.execute"],
-            "scope_refs": ["scope.h5"],
+            "scope_refs": ["scope.runtime"],
             "allowed_tool_ids": ["diagnostic.echo", "diagnostic.second"],
             "data_classification": "INTERNAL",
-            "correlation_id": "corr_h5_runtime_001",
+            "correlation_id": "corr_agentic_runtime_001",
             "execution_budget": {
                 "max_tokens": max_tokens,
                 "max_cost": max_cost,
@@ -334,14 +330,14 @@ def run_request(
     }
     if with_evidence:
         request["context_bundle"] = {
-            "context_id": "context_h5_001",
-            "tenant_id": "tenant_h5_001",
-            "organization_id": "organization_h5_001",
-            "workspace_id": "workspace_h5_001",
-            "actor_id": "actor_h5_001",
-            "correlation_id": "corr_h5_runtime_001",
+            "context_id": "context_runtime_001",
+            "tenant_id": "tenant_runtime_001",
+            "organization_id": "organization_runtime_001",
+            "workspace_id": "workspace_runtime_001",
+            "actor_id": "actor_runtime_001",
+            "correlation_id": "corr_agentic_runtime_001",
             "goal": "Use current governed evidence.",
-            "scope_refs": ["scope.h5"],
+            "scope_refs": ["scope.runtime"],
             "created_at": "2026-09-22T09:30:00Z",
             "items": [],
             "evidence_refs": [evidence_ref()],
@@ -351,7 +347,7 @@ def run_request(
 
 def authorization(*, tools: Sequence[str] = ("diagnostic.echo", "diagnostic.second")):
     return RuntimeAuthorization(
-        run_id="run_h5_runtime_001",
+        run_id="run_agentic_runtime_001",
         registry_digest="a" * 64,
         lifecycle_state="TEST_AUTHORIZED",
         allowed_tool_ids=tuple(tools),
@@ -476,7 +472,7 @@ async def test_tool_must_be_in_three_way_authority_intersection(
 ) -> None:
     runtime, _, tools = engine(QueuePlanner((tool_decision("diagnostic.echo", {}),)))
     result = await runtime.run(
-        definition(allowed_tool_ids=definition_tools),
+        definition(tool_ids=definition_tools),
         run_request(requested_tool_ids=request_tools),
         authorization(tools=backend_tools),
     )
@@ -616,9 +612,7 @@ async def test_cumulative_token_and_cost_budgets_are_enforced() -> None:
         )
     )
     runtime, _, _ = engine(token_planner)
-    token_result = await runtime.run(
-        definition(), run_request(max_tokens=10), authorization()
-    )
+    token_result = await runtime.run(definition(), run_request(max_tokens=10), authorization())
     assert token_result["error"]["code"] == "BUDGET_TOKENS_EXCEEDED"
     assert token_result["usage"]["input_tokens"] == 9
     assert token_result["usage"]["output_tokens"] == 3
@@ -631,9 +625,7 @@ async def test_cumulative_token_and_cost_budgets_are_enforced() -> None:
         )
     )
     cost_runtime, _, _ = engine(cost_planner)
-    cost_result = await cost_runtime.run(
-        definition(), run_request(max_cost=2), authorization()
-    )
+    cost_result = await cost_runtime.run(definition(), run_request(max_cost=2), authorization())
     assert cost_result["error"]["code"] == "BUDGET_COST_EXCEEDED"
 
 
@@ -682,9 +674,7 @@ async def test_cancel_before_first_step_and_between_steps() -> None:
 @pytest.mark.asyncio
 async def test_whole_run_timeout_maps_to_canonical_timed_out() -> None:
     runtime, _, _ = engine(SlowPlanner())
-    result = await runtime.run(
-        definition(), run_request(timeout_seconds=1), authorization()
-    )
+    result = await runtime.run(definition(), run_request(timeout_seconds=1), authorization())
     assert result["status"] == "TIMED_OUT"
     assert result["error"]["code"] == "RUNTIME_TIMEOUT"
 
@@ -698,9 +688,7 @@ async def test_needs_info_and_approval_required_stop_without_tool() -> None:
         "additionalProperties": False,
     }
     for kind in (AgenticActionKind.NEEDS_INFO, AgenticActionKind.APPROVAL_REQUIRED):
-        planner = QueuePlanner(
-            (AgenticDecision(kind=kind, output={"summary": kind.value}),)
-        )
+        planner = QueuePlanner((AgenticDecision(kind=kind, output={"summary": kind.value}),))
         runtime, _, tools = engine(planner)
         result = await runtime.run(
             definition(output_schema=review_schema), run_request(), authorization()
@@ -739,15 +727,13 @@ async def test_agent_approval_required_stops_before_material_tool() -> None:
 async def test_evidence_is_real_selected_and_never_fabricated() -> None:
     valid = finish(
         {"summary": "evidence-backed"},
-        evidence_ids=("evidence_h5_001",),
+        evidence_ids=("evidence_runtime_001",),
         requires_evidence=True,
     )
     runtime, _, _ = engine(QueuePlanner((valid,)))
-    result = await runtime.run(
-        definition(), run_request(with_evidence=True), authorization()
-    )
-    assert result["evidence_refs"][0]["evidence_id"] == "evidence_h5_001"
-    assert result["correlation_id"] == "corr_h5_runtime_001"
+    result = await runtime.run(definition(), run_request(with_evidence=True), authorization())
+    assert result["evidence_refs"][0]["evidence_id"] == "evidence_runtime_001"
+    assert result["correlation_id"] == "corr_agentic_runtime_001"
     assert result["evidence_refs"][0]["correlation_id"] == "corr_origin_001"
 
     fake = finish(
@@ -827,7 +813,7 @@ async def test_model_gateway_planner_receives_only_effective_tools() -> None:
     planner = ModelGatewayAgenticPlanner(model_gateway=gateway)
     runtime, _, _ = engine(planner, gateway=gateway)  # type: ignore[arg-type]
     await runtime.run(
-        definition(allowed_tool_ids=("diagnostic.echo",)),
+        definition(tool_ids=("diagnostic.echo",)),
         run_request(requested_tool_ids=("diagnostic.echo", "diagnostic.second")),
         authorization(tools=("diagnostic.echo", "diagnostic.second")),
     )
@@ -908,9 +894,7 @@ async def test_model_gateway_planner_cost_is_cumulative_and_strict_json() -> Non
         ModelGatewayAgenticPlanner(model_gateway=over_cost),
         gateway=over_cost,  # type: ignore[arg-type]
     )
-    result = await runtime.run(
-        definition(), run_request(max_cost=2), authorization()
-    )
+    result = await runtime.run(definition(), run_request(max_cost=2), authorization())
     assert result["error"]["code"] == "BUDGET_COST_EXCEEDED"
 
     malformed = SequenceGateway(
@@ -961,9 +945,7 @@ def test_runtime_evidence_classification_is_fail_closed(
 ) -> None:
     request = run_request(with_evidence=True)
     request["execution_context"]["data_classification"] = context_classification
-    request["context_bundle"]["evidence_refs"][0][
-        "data_classification"
-    ] = evidence_classification
+    request["context_bundle"]["evidence_refs"][0]["data_classification"] = evidence_classification
     assert bool(known_evidence(request)) is eligible
 
 
@@ -992,7 +974,7 @@ async def test_excluded_evidence_cannot_be_fabricated_into_result() -> None:
     request["context_bundle"]["evidence_refs"][0]["data_classification"] = "CONFIDENTIAL"
     decision = finish(
         {"summary": "unsupported"},
-        evidence_ids=("evidence_h5_001",),
+        evidence_ids=("evidence_runtime_001",),
         requires_evidence=True,
     )
     runtime, _, _ = engine(QueuePlanner((decision,)))
@@ -1004,27 +986,27 @@ async def test_excluded_evidence_cannot_be_fabricated_into_result() -> None:
 def delegation_snapshot() -> DelegationAuthorizationSnapshot:
     return DelegationAuthorizationSnapshot(
         enabled=True,
-        parent_run_id="run_h5_runtime_001",
-        root_run_id="run_h5_runtime_001",
-        parent_agent_id="agent_h5_runtime_001",
+        parent_run_id="run_agentic_runtime_001",
+        root_run_id="run_agentic_runtime_001",
+        parent_agent_id="agent_agentic_runtime_001",
         parent_agent_version="1.0.0",
         parent_depth=0,
         ancestry_agent_refs=(),
         allowed_child_targets=(
             AuthorizedChildTarget(
-                agent_id="agent_child_h6_001",
+                agent_id="agent_child_delegation_001",
                 agent_version="1.0.0",
-                capability_ids=("capability_child_h6",),
+                capability_ids=("capability_child_delegation",),
             ),
         ),
         max_depth=2,
         max_children=2,
         effective_parent_authority=AuthorityEnvelope(
-            tenant_id="tenant_h5_001",
-            organization_id="organization_h5_001",
-            workspace_id="workspace_h5_001",
+            tenant_id="tenant_runtime_001",
+            organization_id="organization_runtime_001",
+            workspace_id="workspace_runtime_001",
             permission_refs=frozenset({"tools.diagnostic.execute"}),
-            scope_refs=frozenset({"scope.h5"}),
+            scope_refs=frozenset({"scope.runtime"}),
             allowed_tool_ids=frozenset({"diagnostic.echo", "diagnostic.second"}),
             data_classification=DataClassification.INTERNAL,
         ),
@@ -1043,16 +1025,16 @@ def delegation_snapshot() -> DelegationAuthorizationSnapshot:
 
 def delegation_intent(
     *,
-    task_id: str = "child_task_h6_001",
+    task_id: str = "child_task_delegation_001",
     max_tokens: int = 40,
     max_cost: float = 0.5,
 ) -> DelegationIntent:
     snapshot = delegation_snapshot()
     return DelegationPlanner().plan(
         snapshot=snapshot,
-        target_agent_id="agent_child_h6_001",
+        target_agent_id="agent_child_delegation_001",
         target_agent_version="1.0.0",
-        capability_id="capability_child_h6",
+        capability_id="capability_child_delegation",
         task=ChildTaskSpec(
             child_task_id=task_id,
             goal="Produce a bounded child summary.",
@@ -1084,7 +1066,7 @@ def delegation_intent(
 
 def delegate_decision(
     *,
-    task_id: str = "child_task_h6_001",
+    task_id: str = "child_task_delegation_001",
     max_tokens: int = 40,
     max_cost: float = 0.5,
 ) -> AgenticDecision:
@@ -1098,9 +1080,7 @@ def delegate_decision(
     )
 
 
-def delegation_proposal(
-    *, max_tokens: int = 40, max_cost: float = 0.5
-) -> dict[str, Any]:
+def delegation_proposal(*, max_tokens: int = 40, max_cost: float = 0.5) -> dict[str, Any]:
     planned = delegation_intent(max_tokens=max_tokens, max_cost=max_cost)
     return {
         "target_agent_id": planned.target_agent_id,
@@ -1113,13 +1093,13 @@ def delegation_proposal(
 
 def canonical_child_result(**changes: Any) -> dict[str, Any]:
     value: dict[str, Any] = {
-        "run_id": "run_child_h6_001",
-        "root_run_id": "run_h5_runtime_001",
-        "parent_run_id": "run_h5_runtime_001",
-        "correlation_id": "corr_h5_runtime_001",
-        "agent_id": "agent_child_h6_001",
+        "run_id": "run_child_delegation_001",
+        "root_run_id": "run_agentic_runtime_001",
+        "parent_run_id": "run_agentic_runtime_001",
+        "correlation_id": "corr_agentic_runtime_001",
+        "agent_id": "agent_child_delegation_001",
         "agent_version": "1.0.0",
-        "capability_id": "capability_child_h6",
+        "capability_id": "capability_child_delegation",
         "status": "COMPLETED",
         "output_state": "AI_INFERRED",
         "output": {"summary": "child complete"},
@@ -1135,9 +1115,7 @@ def canonical_child_result(**changes: Any) -> dict[str, Any]:
 
 @pytest.mark.asyncio
 async def test_delegate_boundary_result_becomes_bounded_parent_observation() -> None:
-    planner = QueuePlanner(
-        (delegate_decision(), finish({"summary": "parent used child"}))
-    )
+    planner = QueuePlanner((delegate_decision(), finish({"summary": "parent used child"})))
     delegation = FakeDelegationClient((canonical_child_result(),))
     runtime, _, _ = engine(
         planner,
@@ -1187,9 +1165,7 @@ async def test_duplicate_delegation_stops_before_second_boundary_call() -> None:
 async def test_invalid_child_result_is_labeled_and_parent_can_continue(
     child_payload: dict[str, Any],
 ) -> None:
-    planner = QueuePlanner(
-        (delegate_decision(), finish({"summary": "needs review"}))
-    )
+    planner = QueuePlanner((delegate_decision(), finish({"summary": "needs review"})))
     delegation = FakeDelegationClient((child_payload,))
     runtime, _, _ = engine(
         planner,
@@ -1211,7 +1187,7 @@ async def test_child_failure_is_observed_without_retry_or_parent_usage_folding()
         error={
             "code": "CHILD_FAILED",
             "message": "child failed safely",
-            "correlation_id": "corr_h5_runtime_001",
+            "correlation_id": "corr_agentic_runtime_001",
             "retryable": False,
         },
     )
@@ -1238,14 +1214,12 @@ async def test_valid_child_evidence_is_available_without_lineage_rewrite() -> No
             delegate_decision(),
             finish(
                 {"summary": "evidence retained"},
-                evidence_ids=("evidence_h5_001",),
+                evidence_ids=("evidence_runtime_001",),
                 requires_evidence=True,
             ),
         )
     )
-    delegation = FakeDelegationClient(
-        (canonical_child_result(evidence_refs=[child_evidence]),)
-    )
+    delegation = FakeDelegationClient((canonical_child_result(evidence_refs=[child_evidence]),))
     runtime, _, _ = engine(
         planner,
         delegation_client=delegation,
@@ -1297,9 +1271,9 @@ async def test_model_planner_exposes_delegate_only_with_authorized_targets() -> 
     operational = json.loads(with_gateway.requests[0].messages[1]["content"])
     target = operational["delegation"]["authorized_child_targets"][0]
     assert target == {
-        "agent_id": "agent_child_h6_001",
+        "agent_id": "agent_child_delegation_001",
         "agent_version": "1.0.0",
-        "capability_ids": ["capability_child_h6"],
+        "capability_ids": ["capability_child_delegation"],
         "research_domains": [],
     }
 
@@ -1341,8 +1315,8 @@ async def test_model_planner_proposal_derives_runtime_owned_lineage_and_key() ->
     assert result["status"] == "COMPLETED"
     assert len(delegation.intents) == 1
     submitted = delegation.intents[0]
-    assert submitted.parent_run_id == "run_h5_runtime_001"
-    assert submitted.root_run_id == "run_h5_runtime_001"
+    assert submitted.parent_run_id == "run_agentic_runtime_001"
+    assert submitted.root_run_id == "run_agentic_runtime_001"
     assert submitted.delegation_key == planned.delegation_key
 
 
@@ -1362,9 +1336,7 @@ def incoherent_snapshot(case: str) -> DelegationAuthorizationSnapshot:
             "organization": "organization_id",
             "workspace": "workspace_id",
         }[case]
-        authority = base.effective_parent_authority.model_copy(
-            update={field: "mismatched-value"}
-        )
+        authority = base.effective_parent_authority.model_copy(update={field: "mismatched-value"})
         return base.model_copy(update={"effective_parent_authority": authority})
     if case == "permission":
         authority = base.effective_parent_authority.model_copy(
@@ -1419,9 +1391,7 @@ def incoherent_snapshot(case: str) -> DelegationAuthorizationSnapshot:
         ("concurrency-limit", "DELEGATION_SNAPSHOT_LIMIT_EXPANSION"),
     ),
 )
-async def test_delegation_snapshot_is_bound_before_planner(
-    case: str, code: str
-) -> None:
+async def test_delegation_snapshot_is_bound_before_planner(case: str, code: str) -> None:
     planner = QueuePlanner((finish({"summary": "must not run"}),))
     delegation = FakeDelegationClient((canonical_child_result(),))
     runtime, _, _ = engine(
@@ -1489,9 +1459,7 @@ async def test_forged_delegate_is_rechecked_when_capacity_is_zero() -> None:
         (ModelUsage(estimated_cost=1.6), "CHILD_COST_RESERVATION_EXCEEDED"),
     ),
 )
-async def test_parent_consumption_reduces_child_reservation(
-    usage: ModelUsage, code: str
-) -> None:
+async def test_parent_consumption_reduces_child_reservation(usage: ModelUsage, code: str) -> None:
     decision = delegate_decision().model_copy(update={"planner_usage": usage})
     delegation = FakeDelegationClient((canonical_child_result(),))
     runtime, _, _ = engine(
@@ -1506,13 +1474,13 @@ async def test_parent_consumption_reduces_child_reservation(
 
 @pytest.mark.asyncio
 async def test_child_reservations_and_parent_usage_are_not_double_counted() -> None:
-    first = delegate_decision(task_id="child_task_h6_001").model_copy(
+    first = delegate_decision(task_id="child_task_delegation_001").model_copy(
         update={"planner_usage": ModelUsage(input_tokens=10, estimated_cost=0.1)}
     )
-    second = delegate_decision(task_id="child_task_h6_002")
+    second = delegate_decision(task_id="child_task_delegation_002")
     planner = QueuePlanner((first, second, finish({"summary": "two children"})))
     delegation = FakeDelegationClient(
-        (canonical_child_result(), canonical_child_result(run_id="run_child_h6_002"))
+        (canonical_child_result(), canonical_child_result(run_id="run_child_delegation_002"))
     )
     runtime, _, _ = engine(
         planner,
@@ -1535,9 +1503,7 @@ async def test_parent_planner_budget_subtracts_child_reservations() -> None:
             planner_response(
                 {
                     "kind": "DELEGATE",
-                    "delegation_proposal": delegation_proposal(
-                        max_tokens=80, max_cost=1.2
-                    ),
+                    "delegation_proposal": delegation_proposal(max_tokens=80, max_cost=1.2),
                 },
                 input_tokens=6,
                 output_tokens=4,
@@ -1730,9 +1696,7 @@ async def test_child_output_is_bounded_non_instructional_data_for_model() -> Non
             ),
         )
     )
-    delegation = FakeDelegationClient(
-        (canonical_child_result(output={"summary": injection}),)
-    )
+    delegation = FakeDelegationClient((canonical_child_result(output={"summary": injection}),))
     runtime, _, _ = engine(
         ModelGatewayAgenticPlanner(model_gateway=gateway),
         gateway=gateway,  # type: ignore[arg-type]
@@ -1764,7 +1728,7 @@ async def test_noncompleted_child_evidence_is_preserved_but_not_promoted(
         error={
             "code": f"CHILD_{status}",
             "message": "child stopped",
-            "correlation_id": "corr_h5_runtime_001",
+            "correlation_id": "corr_agentic_runtime_001",
             "retryable": False,
         },
     )
@@ -1774,7 +1738,7 @@ async def test_noncompleted_child_evidence_is_preserved_but_not_promoted(
             delegate_decision(),
             finish(
                 {"summary": "must not cite failed child"},
-                evidence_ids=("evidence_h5_001",),
+                evidence_ids=("evidence_runtime_001",),
                 requires_evidence=True,
             ),
         )
@@ -1793,8 +1757,8 @@ async def test_noncompleted_child_evidence_is_preserved_but_not_promoted(
 
 @pytest.mark.asyncio
 async def test_successful_sibling_evidence_is_promoted_independently() -> None:
-    failed_evidence = evidence_ref(evidence_id="evidence_failed_h6")
-    successful_evidence = evidence_ref(evidence_id="evidence_success_h6")
+    failed_evidence = evidence_ref(evidence_id="evidence_failed_delegation")
+    successful_evidence = evidence_ref(evidence_id="evidence_success_delegation")
     failed = canonical_child_result(
         status="FAILED",
         output_state="BLOCKED",
@@ -1802,18 +1766,18 @@ async def test_successful_sibling_evidence_is_promoted_independently() -> None:
         error={
             "code": "CHILD_FAILED",
             "message": "child failed",
-            "correlation_id": "corr_h5_runtime_001",
+            "correlation_id": "corr_agentic_runtime_001",
             "retryable": False,
         },
     )
     failed.pop("output")
     planner = QueuePlanner(
         (
-            delegate_decision(task_id="child_task_h6_001"),
-            delegate_decision(task_id="child_task_h6_002"),
+            delegate_decision(task_id="child_task_delegation_001"),
+            delegate_decision(task_id="child_task_delegation_002"),
             finish(
                 {"summary": "successful sibling retained"},
-                evidence_ids=("evidence_success_h6",),
+                evidence_ids=("evidence_success_delegation",),
                 requires_evidence=True,
             ),
         )
@@ -1824,7 +1788,7 @@ async def test_successful_sibling_evidence_is_promoted_independently() -> None:
             (
                 failed,
                 canonical_child_result(
-                    run_id="run_child_h6_002", evidence_refs=[successful_evidence]
+                    run_id="run_child_delegation_002", evidence_refs=[successful_evidence]
                 ),
             )
         ),
@@ -1833,5 +1797,5 @@ async def test_successful_sibling_evidence_is_promoted_independently() -> None:
     result = await runtime.run(definition(), run_request(), authorization())
     assert result["status"] == "COMPLETED"
     assert [item["evidence_id"] for item in result["evidence_refs"]] == [
-        "evidence_success_h6"
+        "evidence_success_delegation"
     ]

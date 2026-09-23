@@ -1,4 +1,4 @@
-"""Generic H7 duplicate, corroboration, and unresolved conflict intelligence."""
+"""Generic research duplicate, corroboration, and unresolved conflict intelligence."""
 
 from __future__ import annotations
 
@@ -44,14 +44,12 @@ class ClaimComparisonIntelligence:
                     continue
                 evidence_ids = tuple(
                     dict.fromkeys(
-                        evidence_id
-                        for claim in equivalent
-                        for evidence_id in claim.evidence_ids
+                        evidence_id for claim in equivalent for evidence_id in claim.evidence_ids
                     )
                 )
-                by_lineage: dict[
-                    tuple[tuple[str, ...], tuple[str, ...]], list[ClaimAssessment]
-                ] = defaultdict(list)
+                by_lineage: dict[tuple[tuple[str, ...], tuple[str, ...]], list[ClaimAssessment]] = (
+                    defaultdict(list)
+                )
                 for claim in equivalent:
                     by_lineage[(claim.source_ids, claim.source_versions)].append(claim)
                 for same_lineage in by_lineage.values():
@@ -71,9 +69,7 @@ class ClaimComparisonIntelligence:
                     )
                 source_ids = tuple(
                     dict.fromkeys(
-                        source_id
-                        for claim in equivalent
-                        for source_id in claim.source_ids
+                        source_id for claim in equivalent for source_id in claim.source_ids
                     )
                 )
                 if len(source_ids) >= 2:
@@ -97,9 +93,7 @@ class ClaimComparisonIntelligence:
                 dict.fromkeys(source_id for claim in competing for source_id in claim.source_ids)
             )
             versions = tuple(
-                dict.fromkeys(
-                    version for claim in competing for version in claim.source_versions
-                )
+                dict.fromkeys(version for claim in competing for version in claim.source_versions)
             )
             freshness = {
                 quality[evidence_id].freshness

@@ -27,9 +27,7 @@ def test_generic_and_exactly_four_domain_research_packages_are_canonical() -> No
 
     assert ids == {"skill.research.core", *DOMAIN_IDS}
     domain_ids = {
-        item.specification.skill_id
-        for item in discovered
-        if item.package_path.name != "core"
+        item.specification.skill_id for item in discovered if item.package_path.name != "core"
     }
     assert domain_ids == DOMAIN_IDS
     assert all(

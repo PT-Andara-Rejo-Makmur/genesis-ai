@@ -168,9 +168,7 @@ def test_same_identity_workspace_and_scope_is_eligible() -> None:
         ),
     ],
 )
-def test_identity_and_scope_mismatch_is_excluded(
-    change: dict[str, Any], reason_code: str
-) -> None:
+def test_identity_and_scope_mismatch_is_excluded(change: dict[str, Any], reason_code: str) -> None:
     item = candidate(**change)
     result = select(item)
     assert not result.selected
@@ -209,9 +207,7 @@ def test_classification_order_is_fail_closed(
         ({"status": MemoryRecordStatus.INACTIVE}, "MEMORY_NOT_ACTIVE"),
     ],
 )
-def test_retention_freshness_and_state_filter(
-    change: dict[str, Any], reason_code: str
-) -> None:
+def test_retention_freshness_and_state_filter(change: dict[str, Any], reason_code: str) -> None:
     item = candidate(**change)
     result = select(item)
     assert not result.selected
@@ -301,9 +297,7 @@ def test_same_content_with_independent_lineage_remains_corroborating() -> None:
         ),
     ],
 )
-def test_invalid_or_missing_lineage_is_excluded(
-    change: dict[str, Any], reason_code: str
-) -> None:
+def test_invalid_or_missing_lineage_is_excluded(change: dict[str, Any], reason_code: str) -> None:
     item = candidate(**change)
     result = select(item)
     assert not result.selected

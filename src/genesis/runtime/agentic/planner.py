@@ -11,10 +11,8 @@ from genesis.model_gateway.interfaces import ModelGateway
 from genesis.model_gateway.types import ModelRequest
 from genesis.orchestration.delegation import DelegationSynthesizer
 from genesis.runtime.agentic.models import (
-    AgenticActionKind,
     AgenticDecision,
     AgenticRuntimeState,
-    ExecutionPlan,
     ModelUsage,
     RuntimeFailure,
     StopReason,
@@ -100,9 +98,7 @@ class ModelGatewayAgenticPlanner:
             decision = AgenticDecision.model_validate_json(response.content, strict=True)
         except (json.JSONDecodeError, ValidationError, ValueError, TypeError) as exc:
             raise self._invalid(state, usage) from exc
-        return decision.model_copy(
-            update={"planner_usage": usage}
-        )
+        return decision.model_copy(update={"planner_usage": usage})
 
     @staticmethod
     def _remaining_budget(
@@ -137,8 +133,7 @@ class ModelGatewayAgenticPlanner:
                 )
             }
             for item in evidence
-            if isinstance(item, Mapping)
-            and item.get("evidence_id") in state.known_evidence_ids
+            if isinstance(item, Mapping) and item.get("evidence_id") in state.known_evidence_ids
         ]
         observations = []
         for item in state.observations[-_MAX_OBSERVATIONS:]:
@@ -171,9 +166,9 @@ class ModelGatewayAgenticPlanner:
                     "status": item.status,
                     "validation_status": item.validation_status,
                     "error_code": item.error_code,
-                    "output_preview": json.dumps(
-                        item.output, sort_keys=True, default=str
-                    )[:_MAX_CHILD_OUTPUT_PREVIEW],
+                    "output_preview": json.dumps(item.output, sort_keys=True, default=str)[
+                        :_MAX_CHILD_OUTPUT_PREVIEW
+                    ],
                     "instruction_authority": False,
                 }
                 for item in state.child_observations
@@ -187,9 +182,7 @@ class ModelGatewayAgenticPlanner:
                     "failed_child_task_ids": [
                         item.child_task_id for item in synthesis.failed_children
                     ],
-                    "evidence_ids": [
-                        item["evidence_id"] for item in synthesis.evidence_refs
-                    ],
+                    "evidence_ids": [item["evidence_id"] for item in synthesis.evidence_refs],
                     "reason_codes": synthesis.reason_codes,
                     "instruction_authority": False,
                 }
@@ -210,9 +203,7 @@ class ModelGatewayAgenticPlanner:
         }
 
     @staticmethod
-    def _invalid(
-        state: AgenticRuntimeState, usage: ModelUsage | None = None
-    ) -> RuntimeFailure:
+    def _invalid(state: AgenticRuntimeState, usage: ModelUsage | None = None) -> RuntimeFailure:
         if usage is not None:
             state = state.model_copy(
                 update={
@@ -233,33 +224,3 @@ class ModelGatewayAgenticPlanner:
             stop_reason=StopReason.OUTPUT_INVALID,
             state=state,
         )
-
-
-class SinglePassPlanner:
-    async def plan(
-        self,
-        definition: AgentDefinition,
-        request: Mapping[str, Any],
-    ) -> ExecutionPlan:
-        return ExecutionPlan(
-            messages=(
-                {
-                    "role": "system",
-                    "content": definition.purpose,
-                },
-                {
-                    "role": "user",
-                    "content": json.dumps(request["input"], sort_keys=True),
-                },
-            )
-        )
-
-    async def next_action(
-        self,
-        definition: AgentDefinition,
-        request: Mapping[str, Any],
-        state: AgenticRuntimeState,
-    ) -> AgenticDecision:
-        del state
-        plan = await self.plan(definition, request)
-        return AgenticDecision(kind=AgenticActionKind.FINISH, messages=plan.messages)

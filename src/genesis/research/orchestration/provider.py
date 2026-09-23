@@ -1,4 +1,4 @@
-"""Backend-owned research retrieval boundary represented as an internal H7 port."""
+"""Backend-owned research retrieval boundary represented as an internal research port."""
 
 from __future__ import annotations
 
@@ -38,6 +38,4 @@ class ResearchRetrievalResult(BaseModel):
 
 
 class ResearchEvidenceProvider(Protocol):
-    async def retrieve(
-        self, request: ResearchRetrievalRequest
-    ) -> ResearchRetrievalResult: ...
+    async def retrieve(self, request: ResearchRetrievalRequest) -> ResearchRetrievalResult: ...

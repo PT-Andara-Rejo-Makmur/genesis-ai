@@ -1,8 +1,13 @@
-from typing import Any, Literal
+from collections.abc import Mapping
+from typing import TYPE_CHECKING, Any, Self
 
 from pydantic import BaseModel, ConfigDict, Field
 
+if TYPE_CHECKING:
+    from genesis.contracts import CanonicalContractCatalog
+
 SEMVER_PATTERN = r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?$"
+AGENT_DEFINITION_SCHEMA = "https://schemas.alos.dev/v1/agent/agent-definition.schema.json"
 
 
 class AgentBlueprint(BaseModel):
@@ -15,7 +20,7 @@ class AgentBlueprint(BaseModel):
 
 
 class AgentDefinition(BaseModel):
-    """Data-driven definition consumed by a generic runtime."""
+    """Typed runtime projection of the canonical AgentDefinition vocabulary."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
     agent_id: str = Field(min_length=3, max_length=128)
@@ -23,21 +28,29 @@ class AgentDefinition(BaseModel):
     name: str = Field(min_length=1)
     purpose: str = Field(min_length=1)
     capability_ids: tuple[str, ...] = Field(min_length=1)
-    skill_ids: tuple[str, ...] = ()
-    allowed_tool_ids: tuple[str, ...] = ()
+    skill_refs: tuple[str, ...] = ()
+    tool_ids: tuple[str, ...] = ()
     permission_refs: tuple[str, ...] = ()
     scope_refs: tuple[str, ...] = Field(min_length=1)
     approval_required: bool = False
     model_policy_ref: str = Field(min_length=1)
+    delegation_policy: dict[str, Any] | None = None
     input_schema: dict[str, Any] = Field(default_factory=lambda: {"type": "object"})
     output_schema: dict[str, Any] = Field(default_factory=lambda: {"type": "object"})
 
+    @classmethod
+    def from_canonical_payload(
+        cls,
+        payload: Mapping[str, Any],
+        *,
+        contracts: "CanonicalContractCatalog",
+    ) -> Self:
+        """Validate the full canonical payload before creating the runtime projection."""
 
-class AgentDraft(BaseModel):
-    """A proposed definition. GENESIS cannot activate it by itself."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-    draft_id: str = Field(min_length=3, max_length=128)
-    definition: AgentDefinition
-    created_by_run_id: str = Field(min_length=3, max_length=128)
-    status: Literal["DRAFT", "SUBMITTED_FOR_REVIEW"] = "DRAFT"
+        canonical = contracts.validate(AGENT_DEFINITION_SCHEMA, payload)
+        projection = {
+            field_name: canonical[field_name]
+            for field_name in cls.model_fields
+            if field_name in canonical
+        }
+        return cls.model_validate(projection)

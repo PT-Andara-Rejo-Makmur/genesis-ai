@@ -1,4 +1,4 @@
-"""One generic H7 research intelligence pipeline across all R&D domains."""
+"""One generic research intelligence pipeline across all R&D domains."""
 
 from __future__ import annotations
 
@@ -66,7 +66,7 @@ _MAX_TOTAL_CHARACTERS = 12_000
 
 
 class ResearchOrchestrator:
-    """Research intelligence only; Backend owns retrieval authority and persistence."""
+    """Internal evidence, claims, conflicts, findings, and recommendation pipeline."""
 
     def __init__(
         self,
@@ -112,7 +112,7 @@ class ResearchOrchestrator:
         if request.get("domain") is None:
             raise ResearchOrchestrationFailure(
                 "RESEARCH_DOMAIN_REQUIRED",
-                "H7 orchestration requires one explicit typed domain.",
+                "Research orchestration requires one explicit typed domain.",
                 correlation_id,
             )
         domain = ResearchDomain(str(request["domain"]))
@@ -143,17 +143,13 @@ class ResearchOrchestrator:
         reserved_retrieval_cost = 0.0
         reserved_external_retrieval_cost = 0.0
         for subquery in planned.plan.subqueries:
-            subquery_relevance = tuple(
-                self._relevance.assess(item, subquery) for item in evidence
-            )
+            subquery_relevance = tuple(self._relevance.assess(item, subquery) for item in evidence)
             satisfying_ids = {
                 item.evidence_id
                 for item in subquery_relevance
                 if item.relevance in {EvidenceRelevance.EXACT, EvidenceRelevance.RELEVANT}
             }
-            relevant = tuple(
-                item for item in evidence if item.evidence_id in satisfying_ids
-            )
+            relevant = tuple(item for item in evidence if item.evidence_id in satisfying_ids)
             candidates = tuple(self._candidate(item, memory_evidence) for item in relevant)
             external_tool = next(
                 (
@@ -248,9 +244,7 @@ class ResearchOrchestrator:
                         reason_codes=("SELECTED_TOOL_DESCRIPTOR_MISSING",),
                     )
                 )
-                limitations.append(
-                    f"{subquery.subquery_id}:SELECTED_TOOL_DESCRIPTOR_MISSING"
-                )
+                limitations.append(f"{subquery.subquery_id}:SELECTED_TOOL_DESCRIPTOR_MISSING")
                 continue
             projected_total = reserved_retrieval_cost + selected_tool.estimated_cost
             projected_external = reserved_external_retrieval_cost + (
@@ -258,9 +252,7 @@ class ResearchOrchestrator:
                 if selected_tool.category is ResearchToolCategory.EXTERNAL_RESEARCH
                 else 0
             )
-            exceeds_generic = (
-                maximum_tool_cost is not None and projected_total > maximum_tool_cost
-            )
+            exceeds_generic = maximum_tool_cost is not None and projected_total > maximum_tool_cost
             exceeds_external = (
                 selected_tool.category is ResearchToolCategory.EXTERNAL_RESEARCH
                 and projected_external > maximum_external_cost
@@ -279,9 +271,7 @@ class ResearchOrchestrator:
                         reason_codes=("CUMULATIVE_RETRIEVAL_COST_LIMIT",),
                     )
                 )
-                limitations.append(
-                    f"{subquery.subquery_id}:CUMULATIVE_RETRIEVAL_COST_LIMIT"
-                )
+                limitations.append(f"{subquery.subquery_id}:CUMULATIVE_RETRIEVAL_COST_LIMIT")
                 continue
             reserved_retrieval_cost = projected_total
             reserved_external_retrieval_cost = projected_external
@@ -472,8 +462,7 @@ class ResearchOrchestrator:
             admissions.append(assessment)
             if candidate is None:
                 limitations.extend(
-                    f"{assessment.evidence_id}:{reason}"
-                    for reason in assessment.reason_codes
+                    f"{assessment.evidence_id}:{reason}" for reason in assessment.reason_codes
                 )
                 continue
             admitted.append(candidate)
@@ -489,8 +478,7 @@ class ResearchOrchestrator:
             evidence_id=item.evidence_id,
             channel=(
                 ResearchChannel.MEMORY
-                if item in memory_evidence
-                or item.category is ResearchToolCategory.MEMORY
+                if item in memory_evidence or item.category is ResearchToolCategory.MEMORY
                 else ResearchChannel.INTERNAL_SOURCE
             ),
             freshness=FreshnessStatus(str(ref.get("freshness", "UNKNOWN"))),
@@ -535,7 +523,7 @@ class ResearchOrchestrator:
 def evidence_items_from_context(
     context_bundle: Mapping[str, Any],
 ) -> tuple[ResearchEvidenceItem, ...]:
-    """Project already-authorized ContextBundle evidence into bounded H7 data."""
+    """Project already-authorized ContextBundle evidence into bounded research data."""
 
     content_by_evidence = {
         str(item.get("evidence_id")): str(item.get("value", ""))

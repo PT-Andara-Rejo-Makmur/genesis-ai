@@ -1,4 +1,4 @@
-"""Deterministic, explainable H7 evidence quality policy."""
+"""Deterministic, explainable research evidence quality policy."""
 
 from __future__ import annotations
 
@@ -54,8 +54,7 @@ class EvidenceQualityPolicy:
         classification_valid = (
             classification in CLASSIFICATION_RANK
             and active_classification in CLASSIFICATION_RANK
-            and CLASSIFICATION_RANK[classification]
-            <= CLASSIFICATION_RANK[active_classification]
+            and CLASSIFICATION_RANK[classification] <= CLASSIFICATION_RANK[active_classification]
         )
         if (
             not identity_valid
@@ -79,9 +78,7 @@ class EvidenceQualityPolicy:
             if reliability is SourceReliability.HIGH:
                 return self._result(item, QualityTier.STRONG, EvidenceUsability.PRIMARY, 0.95)
             if reliability is SourceReliability.MEDIUM:
-                return self._result(
-                    item, QualityTier.MODERATE, EvidenceUsability.SUPPORTING, 0.75
-                )
+                return self._result(item, QualityTier.MODERATE, EvidenceUsability.SUPPORTING, 0.75)
             reason = (
                 "CURRENT_LOW_RELIABILITY"
                 if reliability is SourceReliability.LOW
@@ -148,9 +145,7 @@ class EvidenceQualityPolicy:
             tier=tier,
             freshness=FreshnessStatus.CURRENT,
             reliability=(
-                SourceReliability.HIGH
-                if tier is QualityTier.STRONG
-                else SourceReliability.MEDIUM
+                SourceReliability.HIGH if tier is QualityTier.STRONG else SourceReliability.MEDIUM
             ),
             usability=usability,
             reason_codes=(f"CURRENT_{tier.value}",),

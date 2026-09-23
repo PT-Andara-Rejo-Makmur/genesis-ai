@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from genesis.contracts import CanonicalContractCatalog
-from genesis.skills.evaluator import EvaluationOutcome, SkillEvaluator
+from genesis.skills.evaluator import SkillEvaluationOutcome, SkillEvaluator
 from genesis.skills.loader import SkillDefinition, SkillDescriptor, SkillReference
 from genesis.skills.selection import (
     SkillCandidateOutcome,
@@ -45,9 +45,7 @@ def outcome(status: SkillSelectionStatus) -> SkillCandidateOutcome:
         relevance_score=1,
         reason="Fixture outcome.",
         missing_tool_ids=(
-            ("source.search_context",)
-            if status is not SkillSelectionStatus.SELECTED
-            else ()
+            ("source.search_context",) if status is not SkillSelectionStatus.SELECTED else ()
         ),
         descriptor=descriptor,
     )
@@ -65,7 +63,7 @@ def test_applicability_reports_structured_pass_and_fail_reasons() -> None:
     assert applicable.passed is True
     assert blocked.passed is False
     assert all(item.check_id and item.reason for item in blocked.checks)
-    assert any(item.outcome is EvaluationOutcome.FAIL for item in blocked.checks)
+    assert any(item.outcome is SkillEvaluationOutcome.FAIL for item in blocked.checks)
 
 
 def test_result_passes_contract_evidence_and_tool_checks() -> None:
@@ -96,7 +94,7 @@ def test_invalid_output_unknown_evidence_and_tool_usage_are_rejected() -> None:
 
     assert result.passed is False
     failed_ids = {
-        item.check_id for item in result.checks if item.outcome is EvaluationOutcome.FAIL
+        item.check_id for item in result.checks if item.outcome is SkillEvaluationOutcome.FAIL
     }
     assert failed_ids == {
         "skill.output_contract",
@@ -118,6 +116,6 @@ def test_insufficient_evidence_requires_explicit_limitation() -> None:
     assert result.passed is False
     assert any(
         item.check_id == "skill.failure_or_limitations_explicit"
-        and item.outcome is EvaluationOutcome.FAIL
+        and item.outcome is SkillEvaluationOutcome.FAIL
         for item in result.checks
     )

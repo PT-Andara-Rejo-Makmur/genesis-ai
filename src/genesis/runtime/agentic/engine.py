@@ -37,7 +37,6 @@ from genesis.runtime.agentic.models import (
     AgenticActionKind,
     AgenticDecision,
     AgenticRuntimeState,
-    ExecutionPlan,
     RuntimeAuthorization,
     RuntimeFailure,
     RuntimeRequestRejected,
@@ -49,7 +48,6 @@ from genesis.runtime.agentic.protocols import (
     AgenticPlanner,
     CancellationProbe,
     RuntimeObserver,
-    RuntimePlanner,
     ToolBoundaryClient,
 )
 from genesis.runtime.agentic.state import (
@@ -85,7 +83,7 @@ class AgentRuntimeEngine:
         self,
         *,
         contracts: CanonicalContractCatalog,
-        planner: RuntimePlanner | AgenticPlanner,
+        planner: AgenticPlanner,
         model_gateway: ModelGateway,
         tool_client: ToolBoundaryClient,
         cancellation_probe: CancellationProbe | None = None,
@@ -182,11 +180,8 @@ class AgentRuntimeEngine:
         state: AgenticRuntimeState,
         tool_results: list[dict[str, Any]],
     ) -> dict[str, Any]:
-        validate_json_schema(
-            definition.input_schema, request["input"], "INPUT_SCHEMA_INVALID"
-        )
+        validate_json_schema(definition.input_schema, request["input"], "INPUT_SCHEMA_INVALID")
         known_evidence_catalog = known_evidence(request)
-        legacy_plan: ExecutionPlan | None = None
         delegation_snapshot = self._validate_delegation_snapshot(
             definition, request, authorization, budget, state
         )
@@ -206,9 +201,7 @@ class AgentRuntimeEngine:
                 definition, request, authorization, state, delegation_snapshot
             )
             try:
-                decision, legacy_plan = await self._next_decision(
-                    definition, planner_request, state, legacy_plan
-                )
+                decision = await self._planner.next_action(definition, planner_request, state)
             except RuntimeFailure:
                 raise
             except Exception as exc:
@@ -320,27 +313,6 @@ class AgentRuntimeEngine:
             StopReason.MAX_STEPS,
         )
 
-    async def _next_decision(
-        self,
-        definition: AgentDefinition,
-        request: dict[str, Any],
-        state: AgenticRuntimeState,
-        legacy_plan: ExecutionPlan | None,
-    ) -> tuple[AgenticDecision, ExecutionPlan | None]:
-        if isinstance(self._planner, AgenticPlanner):
-            return await self._planner.next_action(definition, request, state), None
-        plan = legacy_plan or await self._planner.plan(definition, request)
-        index = state.step_count - 1
-        if index < len(plan.tool_calls):
-            return (
-                AgenticDecision(
-                    kind=AgenticActionKind.TOOL,
-                    tool_intent=plan.tool_calls[index],
-                ),
-                plan,
-            )
-        return AgenticDecision(kind=AgenticActionKind.FINISH, messages=plan.messages), plan
-
     async def _execute_tool_decision(
         self,
         definition: AgentDefinition,
@@ -368,7 +340,7 @@ class AgentRuntimeEngine:
                 "Planned tool is outside AgentRunRequest tool intent.",
                 StopReason.TOOL_DENIED,
             )
-        if intent.tool_id not in definition.allowed_tool_ids:
+        if intent.tool_id not in definition.tool_ids:
             raise fail(
                 state,
                 "TOOL_NOT_DEFINED",
@@ -397,7 +369,9 @@ class AgentRuntimeEngine:
             ) from exc
         self._safe_notify(
             self._observer.on_tool_requested,
-            str(canonical_tool_request["tool_call_id"]), intent.tool_id, state.step_count
+            str(canonical_tool_request["tool_call_id"]),
+            intent.tool_id,
+            state.step_count,
         )
         context = cast(dict[str, Any], request["execution_context"])
         try:
@@ -440,7 +414,9 @@ class AgentRuntimeEngine:
         )
         self._safe_notify(
             self._observer.on_tool_result,
-            observation.tool_call_id, observation.status, observation.step_index
+            observation.tool_call_id,
+            observation.status,
+            observation.step_index,
         )
         if observation.status in {"DENIED", "REJECTED"}:
             raise fail(
@@ -533,17 +509,14 @@ class AgentRuntimeEngine:
                 "submitted_delegation_keys": frozenset(
                     (*state.submitted_delegation_keys, intent.delegation_key)
                 ),
-                "reserved_child_tokens": state.reserved_child_tokens
-                + (budget.max_tokens or 0),
+                "reserved_child_tokens": state.reserved_child_tokens + (budget.max_tokens or 0),
                 "reserved_child_cost": state.reserved_child_cost + (budget.max_cost or 0),
             }
         )
         try:
             raw_result = await client.submit(intent, correlation_id=state.correlation_id)
         except Exception:
-            observation = self._child_validator.invalid_observation(
-                intent, "CHILD_BOUNDARY_FAILED"
-            )
+            observation = self._child_validator.invalid_observation(intent, "CHILD_BOUNDARY_FAILED")
             return submitted.model_copy(
                 update={"child_observations": (*submitted.child_observations, observation)}
             )
@@ -558,10 +531,7 @@ class AgentRuntimeEngine:
             )
         except ChildResultInvalid as exc:
             observation = self._child_validator.invalid_observation(intent, exc.code)
-        if (
-            observation.validation_status == "VALID"
-            and observation.status == "COMPLETED"
-        ):
+        if observation.validation_status == "VALID" and observation.status == "COMPLETED":
             for evidence in observation.evidence_refs:
                 known_evidence_catalog[str(evidence["evidence_id"])] = evidence
         return submitted.model_copy(
@@ -755,7 +725,7 @@ class AgentRuntimeEngine:
     ) -> dict[str, Any]:
         effective = sorted(
             set(cast(list[str], request.get("requested_tool_ids", [])))
-            .intersection(definition.allowed_tool_ids)
+            .intersection(definition.tool_ids)
             .intersection(authorization.allowed_tool_ids)
         )
         projection: dict[str, Any] = {**request, "requested_tool_ids": effective}
@@ -849,16 +819,14 @@ class AgentRuntimeEngine:
                 "DELEGATION_SNAPSHOT_PERMISSION_EXPANSION",
                 "Delegation snapshot expands current permissions.",
             )
-        if not authority.scope_refs.issubset(
-            set(cast(list[str], context.get("scope_refs", [])))
-        ):
+        if not authority.scope_refs.issubset(set(cast(list[str], context.get("scope_refs", [])))):
             reject(
                 "DELEGATION_SNAPSHOT_SCOPE_EXPANSION",
                 "Delegation snapshot expands current scopes.",
             )
         effective_tools = (
             set(cast(list[str], context.get("allowed_tool_ids", [])))
-            .intersection(definition.allowed_tool_ids)
+            .intersection(definition.tool_ids)
             .intersection(authorization.allowed_tool_ids)
             .intersection(cast(list[str], request.get("requested_tool_ids", [])))
         )
@@ -901,8 +869,7 @@ class AgentRuntimeEngine:
         if (
             snapshot.concurrency_preflight_limit is not None
             and snapshot.parent_budget.concurrency_limit is not None
-            and snapshot.concurrency_preflight_limit
-            > snapshot.parent_budget.concurrency_limit
+            and snapshot.concurrency_preflight_limit > snapshot.parent_budget.concurrency_limit
         ):
             reject(
                 "DELEGATION_SNAPSHOT_LIMIT_EXPANSION",
@@ -935,8 +902,7 @@ class AgentRuntimeEngine:
             return False
         if (
             snapshot.parent_budget.max_cost is not None
-            and state.estimated_cost + state.reserved_child_cost
-            >= snapshot.parent_budget.max_cost
+            and state.estimated_cost + state.reserved_child_cost >= snapshot.parent_budget.max_cost
         ):
             return False
         return snapshot.concurrency_preflight_limit is None or (

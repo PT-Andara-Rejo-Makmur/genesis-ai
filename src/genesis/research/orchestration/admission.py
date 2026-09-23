@@ -1,4 +1,4 @@
-"""Canonical, authority-bound admission for every H7 evidence ingestion path."""
+"""Canonical, authority-bound admission for every research evidence ingestion path."""
 
 from __future__ import annotations
 
@@ -54,9 +54,7 @@ class ResearchEvidenceAdmissionPolicy:
 
         raw_scopes = execution_context.get("scope_refs", ())
         active_scopes = (
-            set(raw_scopes)
-            if isinstance(raw_scopes, (list, tuple, set, frozenset))
-            else set()
+            set(raw_scopes) if isinstance(raw_scopes, (list, tuple, set, frozenset)) else set()
         )
         if not set(canonical["scope_refs"]).issubset(active_scopes):
             return None, self._rejected(evidence_id, "EVIDENCE_SCOPE_EXPANSION")
@@ -75,10 +73,7 @@ class ResearchEvidenceAdmissionPolicy:
             return None, self._rejected(evidence_id, "EVIDENCE_NOT_VALID")
         if canonical["instruction_authority"] is not False:
             return None, self._rejected(evidence_id, "EVIDENCE_INSTRUCTION_AUTHORITY")
-        if (
-            canonical["source_type"] == "EXTERNAL"
-            and canonical.get("content_trust") != "UNTRUSTED"
-        ):
+        if canonical["source_type"] == "EXTERNAL" and canonical.get("content_trust") != "UNTRUSTED":
             return None, self._rejected(evidence_id, "EXTERNAL_EVIDENCE_TRUST_INVALID")
 
         admitted = item.model_copy(update={"evidence_ref": canonical})

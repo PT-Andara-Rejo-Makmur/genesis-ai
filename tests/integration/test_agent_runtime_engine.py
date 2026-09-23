@@ -12,8 +12,10 @@ from genesis.model_gateway.budget import ExecutionBudgetGuard
 from genesis.model_gateway.policy import StaticModelPolicy
 from genesis.model_gateway.routing import StaticModelRouter
 from genesis.runtime.agentic import (
+    AgenticActionKind,
+    AgenticDecision,
+    AgenticRuntimeState,
     AgentRuntimeEngine,
-    ExecutionPlan,
     RuntimeAuthorization,
     ToolCallIntent,
 )
@@ -23,19 +25,23 @@ CONTRACTS_ROOT = Path(__file__).resolve().parents[3] / "alos-contracts"
 
 
 class DiagnosticPlanner:
-    async def plan(
+    async def next_action(
         self,
         _definition: AgentDefinition,
         _request: dict[str, object],
-    ) -> ExecutionPlan:
-        return ExecutionPlan(
-            messages=({"role": "user", "content": "Run governed diagnostic"},),
-            tool_calls=(
-                ToolCallIntent(
+        state: AgenticRuntimeState,
+    ) -> AgenticDecision:
+        if not state.observations:
+            return AgenticDecision(
+                kind=AgenticActionKind.TOOL,
+                tool_intent=ToolCallIntent(
                     tool_id="diagnostic.echo",
                     arguments={"message": "runtime split"},
                 ),
-            ),
+            )
+        return AgenticDecision(
+            kind=AgenticActionKind.FINISH,
+            messages=({"role": "user", "content": "Run governed diagnostic"},),
         )
 
 
@@ -58,7 +64,7 @@ def definition() -> AgentDefinition:
         name="Runtime Diagnostic",
         purpose="Verify generic governed runtime execution.",
         capability_ids=("capability_runtime_diagnostic",),
-        allowed_tool_ids=("diagnostic.echo",),
+        tool_ids=("diagnostic.echo",),
         permission_refs=("tools.diagnostic.execute",),
         scope_refs=("scope.diagnostic",),
         model_policy_ref="policy.runtime-test",

@@ -20,14 +20,6 @@ class ToolCallIntent(BaseModel):
     arguments: dict[str, Any]
 
 
-class ExecutionPlan(BaseModel):
-    """Legacy one-shot plan retained for compatibility with existing callers."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-    messages: tuple[dict[str, Any], ...] = Field(min_length=1)
-    tool_calls: tuple[ToolCallIntent, ...] = ()
-
-
 class RuntimeAuthorization(BaseModel):
     """Backend-issued execution snapshot; it grants no new authority in GENESIS."""
 

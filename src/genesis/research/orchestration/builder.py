@@ -1,4 +1,4 @@
-"""Deterministic H7 findings, recommendations, and canonical projection."""
+"""Deterministic research findings and canonical projection."""
 
 from __future__ import annotations
 
@@ -27,28 +27,6 @@ RESEARCH_RESULT_SCHEMA = "https://schemas.alos.dev/v1/research/research-result.s
 class FindingRecommendationBuilder:
     """Produce proposals only; this component has no approval or execution operation."""
 
-    def build(
-        self,
-        *,
-        domain: ResearchDomain,
-        claims: tuple[ClaimAssessment, ...],
-        conflicts: tuple[ConflictAssessment, ...],
-        corroborations: tuple[CorroborationAssessment, ...],
-        assessments: tuple[EvidenceQualityAssessment, ...],
-    ) -> tuple[
-        tuple[ResearchFindingAnalysis, ...],
-        tuple[ResearchRecommendationAnalysis, ...],
-    ]:
-        """Compatibility helper; recommendation synthesis is ModelGateway-only."""
-        findings = self.build_findings(
-            domain=domain,
-            claims=claims,
-            conflicts=conflicts,
-            corroborations=corroborations,
-            assessments=assessments,
-        )
-        return findings, ()
-
     def build_findings(
         self,
         *,
@@ -63,9 +41,7 @@ class FindingRecommendationBuilder:
         for conflict in conflicts:
             for claim_id in conflict.competing_claim_ids:
                 conflict_by_claim.setdefault(claim_id, []).append(conflict.conflict_id)
-        corroborated = {
-            claim_id for item in corroborations for claim_id in item.claim_ids
-        }
+        corroborated = {claim_id for item in corroborations for claim_id in item.claim_ids}
         findings: list[ResearchFindingAnalysis] = []
         for claim in claims:
             if claim.kind is not ClaimKind.FACT or not claim.evidence_ids:

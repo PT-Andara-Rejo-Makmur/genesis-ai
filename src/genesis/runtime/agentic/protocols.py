@@ -7,19 +7,8 @@ from genesis.agents.definitions import AgentDefinition
 from genesis.runtime.agentic.models import (
     AgenticDecision,
     AgenticRuntimeState,
-    ExecutionPlan,
     StopReason,
 )
-
-
-class RuntimePlanner(Protocol):
-    """Legacy planner contract retained during the H5 migration."""
-
-    async def plan(
-        self,
-        definition: AgentDefinition,
-        request: Mapping[str, Any],
-    ) -> ExecutionPlan: ...
 
 
 @runtime_checkable

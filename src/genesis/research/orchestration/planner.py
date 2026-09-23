@@ -1,4 +1,4 @@
-"""Bounded ModelGateway-only H7 question decomposition."""
+"""Bounded ModelGateway-only research question decomposition."""
 
 from __future__ import annotations
 
@@ -60,7 +60,7 @@ class ResearchQuestionPlanner:
             ModelRequest(
                 run_id=run_id,
                 correlation_id=correlation_id,
-                policy_ref="policy.h7.research-plan.v1",
+                policy_ref="policy.research.plan.v1",
                 purpose="bounded-research-question-decomposition",
                 data_classification=data_classification,
                 messages=(

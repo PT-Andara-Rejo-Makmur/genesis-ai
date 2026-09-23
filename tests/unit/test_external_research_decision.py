@@ -64,9 +64,7 @@ def request(**changes: object) -> ResearchDecisionRequest:
 
 
 def test_valid_internal_only_request_uses_internal_source() -> None:
-    result = decider().decide(
-        request(external=ExternalResearchBoundary(enabled=False))
-    )
+    result = decider().decide(request(external=ExternalResearchBoundary(enabled=False)))
 
     assert result.decision is ResearchDecisionKind.USE_INTERNAL_SOURCE
     assert result.selected_evidence_ids == ("evidence_internal_001",)
@@ -133,14 +131,10 @@ def test_external_research_cannot_expand_tool_permission_or_cost_authority() -> 
     no_tool = decider().decide(request(evidence=[], allowed_tool_ids=[]))
     assert no_tool.decision is ResearchDecisionKind.INSUFFICIENT_EVIDENCE
 
-    no_permission = decider().decide(
-        request(evidence=[], authorized_permission_refs=[])
-    )
+    no_permission = decider().decide(request(evidence=[], authorized_permission_refs=[]))
     assert no_permission.decision is ResearchDecisionKind.INSUFFICIENT_EVIDENCE
 
-    over_cost = decider().decide(
-        request(evidence=[], maximum_external_cost=0.5)
-    )
+    over_cost = decider().decide(request(evidence=[], maximum_external_cost=0.5))
     assert over_cost.decision is ResearchDecisionKind.INSUFFICIENT_EVIDENCE
 
 
@@ -154,17 +148,11 @@ def test_cross_scope_evidence_fails_closed_and_preserves_correlation() -> None:
 
 
 def test_four_domains_are_profiles_not_authorization_mechanisms() -> None:
-    decisions = [
-        decider().decide(request(domain=domain)) for domain in ResearchDomain
-    ]
+    decisions = [decider().decide(request(domain=domain)) for domain in ResearchDomain]
 
     assert {result.domain_profile.domain for result in decisions} == set(ResearchDomain)
-    assert {result.authorized_scope_refs for result in decisions} == {
-        ("scope.project.genesis",)
-    }
+    assert {result.authorized_scope_refs for result in decisions} == {("scope.project.genesis",)}
     assert {result.authorized_permission_refs for result in decisions} == {
         ("research.external.read",)
     }
-    assert {result.allowed_tool_ids for result in decisions} == {
-        ("research.external.retrieve",)
-    }
+    assert {result.allowed_tool_ids for result in decisions} == {("research.external.retrieve",)}

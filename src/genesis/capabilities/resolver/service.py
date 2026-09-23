@@ -1,4 +1,4 @@
-"""Capability-first requirement understanding adapted from MVP-1 intelligence."""
+"""Capability-first requirement understanding for governed capability matching."""
 
 from __future__ import annotations
 
@@ -65,9 +65,7 @@ class CapabilityResolver:
                 key=lambda pair: (-pair[0], pair[1].capability_id),
             )
         )
-        resolved = tuple(
-            item for item in ranked_matches if item.capability_id in requested
-        )
+        resolved = tuple(item for item in ranked_matches if item.capability_id in requested)
         found_ids = {item.capability_id for item in resolved}
         missing = tuple(sorted(requested.difference(found_ids)))
         unavailable = any(

@@ -9,7 +9,7 @@ from typing import Literal
 from genesis.capabilities.resolver import CapabilityResolution, CapabilityResolver, Requirement
 from genesis.contracts import CanonicalContractCatalog
 from genesis.control_plane.factory.models import (
-    AgentDraft,
+    AgentDraftProposal,
     FactoryAnalysisRequest,
     FactoryAnalysisResult,
     RegistryHandoff,
@@ -19,12 +19,8 @@ from genesis.control_plane.factory.prompts import version_prompt
 CAPABILITY_DRAFT_SCHEMA = "https://schemas.alos.dev/v1/capability/capability-draft.schema.json"
 AGENT_DEFINITION_SCHEMA = "https://schemas.alos.dev/v1/agent/agent-definition.schema.json"
 AGENT_DRAFT_SCHEMA = "https://schemas.alos.dev/v1/agent/agent-draft.schema.json"
-FACTORY_RESULT_SCHEMA = (
-    "https://schemas.alos.dev/v1/factory/factory-analysis-result.schema.json"
-)
-FACTORY_REQUEST_SCHEMA = (
-    "https://schemas.alos.dev/v1/factory/factory-analysis-request.schema.json"
-)
+FACTORY_RESULT_SCHEMA = "https://schemas.alos.dev/v1/factory/factory-analysis-result.schema.json"
+FACTORY_REQUEST_SCHEMA = "https://schemas.alos.dev/v1/factory/factory-analysis-request.schema.json"
 
 _AGENT_PROMPT = version_prompt(
     prompt_id="genesis.agent-definition",
@@ -150,7 +146,7 @@ class CapabilityFactory:
         capability_id: str,
         resolution: CapabilityResolution,
         digest: str,
-    ) -> AgentDraft:
+    ) -> AgentDraftProposal:
         risk = resolution.understanding.risk_level
         agent_id = f"agent_{digest}"
         prompt = _AGENT_PROMPT.render(objective=requirement.statement.strip())
@@ -247,7 +243,7 @@ class CapabilityFactory:
                 "agent_definition": definition,
             },
         )
-        return AgentDraft.model_validate(payload)
+        return AgentDraftProposal.model_validate(payload)
 
     def _validated_result(self, result: FactoryAnalysisResult) -> FactoryAnalysisResult:
         self._contracts.validate(FACTORY_RESULT_SCHEMA, result.model_dump(mode="json"))

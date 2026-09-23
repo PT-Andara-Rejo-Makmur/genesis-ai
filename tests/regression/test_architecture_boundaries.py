@@ -199,7 +199,7 @@ def test_agentic_and_research_policy_have_no_io_provider_or_backend_bypass() -> 
     assert violations == []
 
 
-def test_h5_runtime_defines_no_executor_persistence_or_governance_mutation() -> None:
+def test_agentic_runtime_defines_no_executor_persistence_or_governance_mutation() -> None:
     forbidden_classes = {"ToolExecutor", "RunRepository", "ResearchProviderClient"}
     forbidden_functions = {
         "approve",
@@ -226,7 +226,9 @@ def test_h5_runtime_defines_no_executor_persistence_or_governance_mutation() -> 
     assert violations == []
 
 
-def test_h6_delegation_has_no_io_recursion_persistence_scheduler_or_h7_engine() -> None:
+def test_delegation_delegation_has_no_io_recursion_persistence_scheduler_or_research_engine() -> (
+    None
+):
     forbidden_imports = (
         *FORBIDDEN_BACKEND_IMPLEMENTATION_IMPORTS,
         *DIRECT_PROVIDER_IMPORTS,
@@ -266,7 +268,7 @@ def test_h6_delegation_has_no_io_recursion_persistence_scheduler_or_h7_engine() 
     assert violations == []
 
 
-def test_h7_research_orchestration_has_no_io_provider_or_authority_bypass() -> None:
+def test_research_research_orchestration_has_no_io_provider_or_authority_bypass() -> None:
     forbidden_imports = (
         *FORBIDDEN_BACKEND_IMPLEMENTATION_IMPORTS,
         *DIRECT_PROVIDER_IMPORTS,
@@ -310,7 +312,7 @@ def test_h7_research_orchestration_has_no_io_provider_or_authority_bypass() -> N
     assert violations == []
 
 
-def test_h7_uses_one_generic_orchestrator_for_all_research_domains() -> None:
+def test_research_uses_one_generic_orchestrator_for_all_research_domains() -> None:
     definitions: list[str] = []
     for path in (SOURCE / "research").rglob("*.py"):
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
@@ -319,6 +321,4 @@ def test_h7_uses_one_generic_orchestrator_for_all_research_domains() -> None:
             for node in ast.walk(tree)
             if isinstance(node, ast.ClassDef) and node.name.endswith("ResearchOrchestrator")
         )
-    assert definitions == [
-        "src/genesis/research/orchestration/service.py:ResearchOrchestrator"
-    ]
+    assert definitions == ["src/genesis/research/orchestration/service.py:ResearchOrchestrator"]

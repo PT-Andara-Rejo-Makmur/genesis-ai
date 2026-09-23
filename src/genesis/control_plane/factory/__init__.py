@@ -1,5 +1,5 @@
 from genesis.control_plane.factory.models import (
-    AgentDraft,
+    AgentDraftProposal,
     AuthorityContext,
     FactoryAnalysisRequest,
     FactoryAnalysisResult,
@@ -10,7 +10,7 @@ from genesis.control_plane.factory.models import (
 from genesis.control_plane.factory.service import CapabilityFactory
 
 __all__ = [
-    "AgentDraft",
+    "AgentDraftProposal",
     "AuthorityContext",
     "CapabilityFactory",
     "FactoryAnalysisRequest",
