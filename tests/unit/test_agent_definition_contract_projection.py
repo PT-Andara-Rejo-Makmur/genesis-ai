@@ -31,9 +31,7 @@ def project(skill_refs: list[dict[str, str]]) -> AgentDefinition:
 
 
 def test_projects_one_exact_canonical_skill_ref() -> None:
-    definition = project(
-        [{"skill_id": "skill.research.market", "skill_version": "1.2.3"}]
-    )
+    definition = project([{"skill_id": "skill.research.market", "skill_version": "1.2.3"}])
 
     assert definition.skill_refs == (
         AgentSkillRef(skill_id="skill.research.market", skill_version="1.2.3"),
@@ -83,9 +81,7 @@ def test_canonical_validation_rejects_extra_skill_ref_property() -> None:
 
 
 def test_projection_does_not_invent_or_replace_skill_authority() -> None:
-    supplied = [
-        {"skill_id": "skill.research.market", "skill_version": "3.4.5+build.7"}
-    ]
+    supplied = [{"skill_id": "skill.research.market", "skill_version": "3.4.5+build.7"}]
 
     definition = project(supplied)
 

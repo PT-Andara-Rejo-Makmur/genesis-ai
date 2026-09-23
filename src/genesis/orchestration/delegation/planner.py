@@ -59,9 +59,7 @@ class DelegationPlanner:
         task: ChildTaskSpec,
         requested_authority: ChildAuthorityRequest,
     ) -> DelegationIntent:
-        target = self._exact_target(
-            snapshot, target_agent_id, target_agent_version, capability_id
-        )
+        target = self._exact_target(snapshot, target_agent_id, target_agent_version, capability_id)
         if task.domain is not None and task.domain not in target.research_domains:
             raise DelegationPlanningError(
                 "RESEARCH_DOMAIN_DENIED",
@@ -82,9 +80,7 @@ class DelegationPlanner:
             "task": task.model_dump(mode="python"),
             "requested_authority": requested_authority.model_dump(mode="python"),
         }
-        return DelegationIntent.model_validate(
-            {**fields, "delegation_key": delegation_key(fields)}
-        )
+        return DelegationIntent.model_validate({**fields, "delegation_key": delegation_key(fields)})
 
     @staticmethod
     def _exact_target(

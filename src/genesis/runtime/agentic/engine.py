@@ -265,6 +265,7 @@ class AgentRuntimeEngine:
                 )
                 continue
             if decision.kind is AgenticActionKind.FINISH:
+                await self._require_not_cancelled(state)
                 return await self._finish(
                     definition,
                     request,
@@ -685,6 +686,14 @@ class AgentRuntimeEngine:
                 "CAPABILITY_MISMATCH", "Capability is not present in Agent definition."
             )
         context = cast(dict[str, Any], request["execution_context"])
+        context_tools = set(cast(list[str], context.get("allowed_tool_ids", [])))
+        if "allowed_tool_ids" in context and not set(authorization.allowed_tool_ids).issubset(
+            context_tools
+        ):
+            raise RuntimeFailure(
+                "TOOL_AUTHORITY_EXPANSION",
+                "Runtime authorization expands the Backend execution context.",
+            )
         raw_budget = context.get("execution_budget")
         if not isinstance(raw_budget, dict):
             raise RuntimeFailure(

@@ -208,9 +208,10 @@ class ExternalResearchDecider:
                     "Evidence is outside the Backend-authorized research scope.",
                     request.correlation_id,
                 )
-            if classification_rank[item.data_classification] > classification_rank[
-                request.data_classification
-            ]:
+            if (
+                classification_rank[item.data_classification]
+                > classification_rank[request.data_classification]
+            ):
                 raise ResearchDecisionFailure(
                     "RESEARCH_EVIDENCE_CLASSIFICATION_DENIED",
                     "Evidence classification exceeds the authorized research context.",
@@ -247,9 +248,7 @@ class ExternalResearchDecider:
             "domain": request.domain.value,
             "selected_evidence_ids": list(evidence_ids),
             "reasons": list(reasons),
-            "retrieval": (
-                retrieval.model_dump(mode="json") if retrieval is not None else None
-            ),
+            "retrieval": (retrieval.model_dump(mode="json") if retrieval is not None else None),
             "external_content_trust": "UNTRUSTED",
         }
         try:

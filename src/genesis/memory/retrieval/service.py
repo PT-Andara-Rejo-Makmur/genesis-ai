@@ -69,9 +69,7 @@ class MemoryRetrievalService:
         now: datetime | None = None,
     ) -> MemorySelection:
         timestamp = (now or datetime.now(UTC)).astimezone(UTC)
-        ordered = sorted(candidates, key=lambda item: item.memory_id)[
-            : query.maximum_candidates
-        ]
+        ordered = sorted(candidates, key=lambda item: item.memory_id)[: query.maximum_candidates]
         eligible: list[MemoryCandidate] = []
         excluded: list[ExcludedMemory] = []
         for candidate in ordered:
@@ -85,9 +83,7 @@ class MemoryRetrievalService:
             if reason is None:
                 eligible.append(candidate)
             else:
-                excluded.append(
-                    ExcludedMemory(memory_id=candidate.memory_id, reason_code=reason)
-                )
+                excluded.append(ExcludedMemory(memory_id=candidate.memory_id, reason_code=reason))
 
         winners, suppressed = self._deduplicate(eligible)
         scored = [
@@ -218,10 +214,7 @@ class MemoryRetrievalService:
     def fingerprint(candidate: MemoryCandidate) -> str:
         content = " ".join(candidate.content.casefold().split())
         lineage = ",".join(
-            sorted(
-                f"{item.source_id}:{item.content_hash}"
-                for item in candidate.evidence_refs
-            )
+            sorted(f"{item.source_id}:{item.content_hash}" for item in candidate.evidence_refs)
         )
         payload = "|".join(
             (

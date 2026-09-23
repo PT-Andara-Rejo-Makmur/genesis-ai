@@ -80,9 +80,7 @@ class ChildResultValidator:
                         "Target output schema is invalid",
                     ) from exc
                 target_errors = list(
-                    Draft202012Validator(target.output_schema).iter_errors(
-                        result.get("output")
-                    )
+                    Draft202012Validator(target.output_schema).iter_errors(result.get("output"))
                 )
                 if target_errors:
                     raise ChildResultInvalid(

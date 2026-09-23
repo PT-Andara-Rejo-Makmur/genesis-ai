@@ -39,8 +39,6 @@ class DelegationSynthesizer:
             disposition=disposition,
             successful_children=successful,
             failed_children=failed,
-            evidence_refs=tuple(
-                evidence_by_lineage[key] for key in sorted(evidence_by_lineage)
-            ),
+            evidence_refs=tuple(evidence_by_lineage[key] for key in sorted(evidence_by_lineage)),
             reason_codes=reasons,
         )

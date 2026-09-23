@@ -51,9 +51,7 @@ class AuthorityContext(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     role: str = Field(min_length=1, max_length=128)
     role_refs: tuple[str, ...] = ()
-    authority_level: Literal[
-        "REQUESTER", "OPERATOR", "IT_APPROVER", "DIRECTOR_APPROVER", "SYSTEM"
-    ]
+    authority_level: Literal["REQUESTER", "OPERATOR", "IT_APPROVER", "DIRECTOR_APPROVER", "SYSTEM"]
 
 
 class ExecutionContextView(BaseModel):

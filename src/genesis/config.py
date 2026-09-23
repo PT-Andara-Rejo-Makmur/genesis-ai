@@ -24,8 +24,13 @@ class Settings(BaseSettings):
     ALOS_CONTRACTS_PATH: Path | None = None
     OTEL_SERVICE_NAME: str = "genesis-ai"
     DEFAULT_MODEL_ROUTE: str = "disabled"
+    ENABLE_TEST_RUNTIME: bool = False
     MAX_DELEGATION_DEPTH: int = Field(default=3, ge=0, le=20)
     MAX_DELEGATION_CHILDREN: int = Field(default=8, ge=0, le=100)
+
+    @property
+    def test_runtime_enabled(self) -> bool:
+        return self.ENABLE_TEST_RUNTIME and self.APP_ENV in {"development", "test"}
 
 
 @lru_cache

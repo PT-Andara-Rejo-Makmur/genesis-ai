@@ -8,8 +8,6 @@ from pathlib import Path
 import pytest
 import yaml
 
-pytest.importorskip("sqlalchemy", reason="cross-repo harness requires Backend dependencies")
-
 WORKSPACE = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(WORKSPACE / "alos-backend" / "src"))
 

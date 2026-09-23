@@ -15,9 +15,7 @@ from genesis.runtime.context.models import DataClassification
 
 _PROPOSABLE_STATES = frozenset({"VALIDATED", "VERIFIED", "APPROVED"})
 _REVIEW_STATES = frozenset({"AI_INFERRED", "NEEDS_REVIEW", "DRAFT"})
-_REJECTED_STATES = frozenset(
-    {"FAILED", "BLOCKED", "REJECTED", "STALE", "CONFLICTED", "CANCELLED"}
-)
+_REJECTED_STATES = frozenset({"FAILED", "BLOCKED", "REJECTED", "STALE", "CONFLICTED", "CANCELLED"})
 _SECRET_PATTERNS = tuple(
     re.compile(pattern, re.IGNORECASE)
     for pattern in (

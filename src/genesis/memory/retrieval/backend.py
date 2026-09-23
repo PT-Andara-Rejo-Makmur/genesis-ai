@@ -42,9 +42,7 @@ class BackendContextProvider:
         max_characters: int = 12_000,
     ) -> dict[str, Any]:
         correlation_id = str(execution_context["correlation_id"])
-        digest = hashlib.sha256(
-            f"{run_id}:{correlation_id}:{query}".encode()
-        ).hexdigest()[:24]
+        digest = hashlib.sha256(f"{run_id}:{correlation_id}:{query}".encode()).hexdigest()[:24]
         payload = {
             "tool_call_id": f"toolcall_{digest}",
             "run_id": run_id,

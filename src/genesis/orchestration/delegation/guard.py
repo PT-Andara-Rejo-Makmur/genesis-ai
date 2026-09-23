@@ -93,9 +93,10 @@ class DelegationGuard:
             raise DelegationDenied("CHILD_SCOPE_EXPANSION", "Scopes expand")
         if not child.allowed_tool_ids.issubset(parent.allowed_tool_ids):
             raise DelegationDenied("CHILD_TOOL_EXPANSION", "Tools expand")
-        if _CLASSIFICATION_RANK[child.data_classification] > _CLASSIFICATION_RANK[
-            parent.data_classification
-        ]:
+        if (
+            _CLASSIFICATION_RANK[child.data_classification]
+            > _CLASSIFICATION_RANK[parent.data_classification]
+        ):
             raise DelegationDenied("CHILD_CLASSIFICATION_EXPANSION", "Classification expands")
 
         budget = intent.requested_authority.budget
@@ -137,13 +138,15 @@ class DelegationGuard:
             raise DelegationDenied("RESEARCH_EGRESS_EXPANSION", "External egress expands")
         if child.maximum_external_cost > parent.maximum_external_cost:
             raise DelegationDenied("RESEARCH_COST_EXPANSION", "External cost expands")
-        if _CLASSIFICATION_RANK[child.data_classification_ceiling] > _CLASSIFICATION_RANK[
-            parent.data_classification_ceiling
-        ]:
+        if (
+            _CLASSIFICATION_RANK[child.data_classification_ceiling]
+            > _CLASSIFICATION_RANK[parent.data_classification_ceiling]
+        ):
             raise DelegationDenied("RESEARCH_CLASSIFICATION_EXPANSION", "Research class expands")
-        if _CLASSIFICATION_RANK[child.data_classification_ceiling] > _CLASSIFICATION_RANK[
-            intent.requested_authority.authority.data_classification
-        ]:
+        if (
+            _CLASSIFICATION_RANK[child.data_classification_ceiling]
+            > _CLASSIFICATION_RANK[intent.requested_authority.authority.data_classification]
+        ):
             raise DelegationDenied(
                 "RESEARCH_CLASSIFICATION_EXPANSION", "Research exceeds child classification"
             )

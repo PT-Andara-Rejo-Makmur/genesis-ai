@@ -79,9 +79,7 @@ class ContextSafetyGuard:
             correlation_id,
         )
         roles = tuple(
-            dict.fromkeys(
-                (context.authority_context.role, *context.authority_context.role_refs)
-            )
+            dict.fromkeys((context.authority_context.role, *context.authority_context.role_refs))
         )
         self._require_subset("role", roles, boundary.allowed_role_refs, correlation_id)
         if context.authority_context.authority_level not in boundary.allowed_authority_levels:

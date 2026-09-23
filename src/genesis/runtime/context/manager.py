@@ -112,9 +112,7 @@ class ContextManager:
         )
         selected_memory = tuple(
             dict.fromkeys(
-                item.memory_ref
-                for item in selection.selected
-                if item.memory_ref is not None
+                item.memory_ref for item in selection.selected if item.memory_ref is not None
             )
         )
         context_id = self._context_id(
@@ -167,9 +165,7 @@ class ContextManager:
         )
 
     @staticmethod
-    def _required_segments(
-        context: ExecutionContextView, goal: str
-    ) -> tuple[ContextSegment, ...]:
+    def _required_segments(context: ExecutionContextView, goal: str) -> tuple[ContextSegment, ...]:
         common = {
             "source": ContextSource.SYSTEM,
             "trust": ContextTrust.GOVERNED,

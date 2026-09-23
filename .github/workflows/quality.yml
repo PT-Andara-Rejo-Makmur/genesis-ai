@@ -24,8 +24,16 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: PT-Andara-Rejo-Makmur/alos-contracts
-          ref: main
+          ref: development
           path: alos-contracts
+          token: ${{ secrets.CROSS_REPO_READ_TOKEN || github.token }}
+
+      - name: Checkout Backend authority implementation
+        uses: actions/checkout@v4
+        with:
+          repository: PT-Andara-Rejo-Makmur/alos-backend
+          ref: development
+          path: alos-backend
           token: ${{ secrets.CROSS_REPO_READ_TOKEN || github.token }}
 
       - name: Siapkan Python 3.12
@@ -36,7 +44,7 @@ jobs:
           cache-dependency-path: genesis-ai/pyproject.toml
 
       - name: Pasang dependency dan framework adapter
-        run: python -m pip install -e ".[dev,frameworks]"
+        run: python -m pip install -e ../alos-backend -e ".[dev,frameworks]"
 
       - name: Ruff
         run: ruff check .

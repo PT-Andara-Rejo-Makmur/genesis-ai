@@ -18,9 +18,7 @@ class ProgressiveSkillLoader:
         self._loader = loader
         self._maximum_loaded = maximum_loaded
 
-    def load_selected(
-        self, selected: Sequence[SkillCandidateOutcome]
-    ) -> tuple[LoadedSkill, ...]:
+    def load_selected(self, selected: Sequence[SkillCandidateOutcome]) -> tuple[LoadedSkill, ...]:
         if len(selected) > self._maximum_loaded:
             raise SkillPackageError(
                 SkillFailureCode.LOAD_LIMIT_EXCEEDED,

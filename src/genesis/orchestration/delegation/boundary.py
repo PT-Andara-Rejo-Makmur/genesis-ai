@@ -6,6 +6,4 @@ from genesis.orchestration.delegation.models import DelegationIntent
 
 
 class DelegationBoundaryClient(Protocol):
-    async def submit(
-        self, intent: DelegationIntent, *, correlation_id: str
-    ) -> dict[str, Any]: ...
+    async def submit(self, intent: DelegationIntent, *, correlation_id: str) -> dict[str, Any]: ...

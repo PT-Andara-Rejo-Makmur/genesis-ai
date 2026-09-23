@@ -46,9 +46,7 @@ class MemoryCandidate(BaseModel):
     evidence_refs: tuple[EvidenceReference, ...] = ()
     source_refs: tuple[str, ...] = ()
     originating_run_id: str | None = Field(default=None, min_length=3, max_length=128)
-    originating_correlation_id: str | None = Field(
-        default=None, min_length=3, max_length=128
-    )
+    originating_correlation_id: str | None = Field(default=None, min_length=3, max_length=128)
     domain: ResearchDomain | None = None
     finding_kind: FindingKind | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
