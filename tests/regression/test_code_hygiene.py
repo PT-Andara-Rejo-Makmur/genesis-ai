@@ -4,9 +4,18 @@ import ast
 import re
 from pathlib import Path
 
+import pytest
+
 SOURCE_ROOT = Path(__file__).resolve().parents[2] / "src" / "genesis"
 
+MILESTONE_VOCABULARY_PATTERN = (
+    r"(?i)(?<![A-Za-z0-9])"
+    r"(?:H[1-8]|MVP(?:1|2)?|M2-H(?:0[1-9]|[1-9][0-9])|RC1)"
+    r"(?![A-Za-z0-9])"
+)
+
 FORBIDDEN_SOURCE_PATTERNS = {
+    "delivery milestone vocabulary": MILESTONE_VOCABULARY_PATTERN,
     "obsolete assurance constant": r"MVP2_H8_REGRESSION_SET",
     "obsolete research budget constant": r"H7_DEFAULT_MODEL_TOKEN_BUDGET",
     "milestone research policy": r"policy\.h7\.",
@@ -30,6 +39,37 @@ def test_production_source_has_no_milestone_identifiers() -> None:
     assert violations == []
 
 
+@pytest.mark.parametrize(
+    "source",
+    (
+        'POLICY = "H1"',
+        'CASE_ID = "h8.context.cross-tenant"',
+        'RELEASE = "MVP"',
+        'RELEASE = "MVP1"',
+        'RELEASE = "mvp2-release"',
+        'MILESTONE = "M2-H08"',
+        'CANDIDATE = "RC1"',
+    ),
+)
+def test_milestone_pattern_rejects_standalone_delivery_vocabulary(source: str) -> None:
+    assert re.search(MILESTONE_VOCABULARY_PATTERN, source)
+
+
+@pytest.mark.parametrize(
+    "source",
+    (
+        'DIGEST = "sha256:a1b2c3d4"',
+        "class CH1Parser: ...",
+        'IDENTIFIER = "RC10"',
+        'VERSION = "MVP3"',
+        'VERSION = "1.0.0"',
+        "# calculate pH1 before admission",
+    ),
+)
+def test_milestone_pattern_allows_unrelated_identifiers_and_versions(source: str) -> None:
+    assert re.search(MILESTONE_VOCABULARY_PATTERN, source) is None
+
+
 def test_production_docstrings_use_permanent_component_names() -> None:
     violations: list[str] = []
     milestone = re.compile(r"\bH[5-8]\b")
@@ -40,7 +80,9 @@ def test_production_docstrings_use_permanent_component_names() -> None:
             if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
                 docstring = ast.get_docstring(node, clean=False)
                 if docstring and milestone.search(docstring):
-                    violations.append(f"{path.relative_to(SOURCE_ROOT)}:{node.lineno}")
+                    violations.append(
+                        f"{path.relative_to(SOURCE_ROOT)}:{getattr(node, 'lineno', 1)}"
+                    )
     assert violations == []
 
 
