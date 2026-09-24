@@ -346,6 +346,54 @@ async def test_unconfigured_existing_capability_is_reused_without_duplicate_draf
 
 
 @pytest.mark.asyncio
+async def test_create_draft_reuses_relevant_factory_catalog_tool_metadata() -> None:
+    requirement = WorkforceRequirement(
+        requirement=factory_requirement(
+            "Coordinate a diagnostic task and return its evidence for human review.",
+            permission_refs=("tools.diagnostic.execute",),
+            scope_refs=("scope.diagnostic",),
+        ),
+        responsibility_hints=(
+            ResponsibilityRequirement(
+                identity="diagnostic.task",
+                purpose="Execute one bounded diagnostic task.",
+                required_tool_ids=("diagnostic.echo",),
+                permission_refs=("tools.diagnostic.execute",),
+                scope_refs=("scope.diagnostic",),
+            ),
+        ),
+    )
+    task_read = CapabilityCatalogItem(
+        capability_id="task.read",
+        version="1.0.0",
+        name="Task read",
+        purpose="Read a task through an authorized Backend tool.",
+        capability_type=CapabilityType.TOOL_REQUIREMENT,
+        backing_tool_ids=("diagnostic.echo",),
+        permission_refs=("tools.diagnostic.execute",),
+        scope_refs=("scope.diagnostic",),
+        keywords=("task", "read"),
+    )
+    snapshot = WorkforceRegistrySnapshot(
+        capability_profiles=(CapabilityProfile(catalog_item=task_read),),
+        dependencies=(
+            RegistryDependency(
+                dependency_id="diagnostic.echo",
+                kind=DependencyKind.TOOL,
+            ),
+        ),
+    )
+
+    plan = await workforce_factory().plan(requirement, snapshot)
+
+    draft = plan.canonical_agent_drafts()[0]
+    assert draft["tool_ids"] == ["diagnostic.echo"]
+    assert draft["permission_refs"] == ["tools.diagnostic.execute"]
+    assert draft["scope_refs"] == ["scope.diagnostic"]
+    assert draft["lifecycle_state"] == "DRAFT"
+
+
+@pytest.mark.asyncio
 async def test_duplicate_structured_capability_identity_is_rejected() -> None:
     duplicate = WorkforceRequirement(
         requirement=factory_requirement("Plan one governed duplicate responsibility safely."),

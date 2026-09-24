@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from genesis.capabilities.models import CapabilityType
+from genesis.capabilities.resolver import CapabilityCatalogItem
 from genesis.control_plane.factory import CapabilityFactory, FactoryAnalysisRequest
 from genesis.control_plane.workforce.evaluation import EvaluationPlanner
 from genesis.control_plane.workforce.graph import stable_id
@@ -69,7 +70,7 @@ class CompositionPlanner:
                 factory_result = self._capability_factory.analyze(
                     FactoryAnalysisRequest(
                         requirement=factory_requirement,
-                        capability_catalog=(),
+                        capability_catalog=self._factory_catalog(node, registry),
                     )
                 )
                 if factory_result.capability_draft is None:
@@ -122,6 +123,30 @@ class CompositionPlanner:
                 )
             )
         return tuple(agents)
+
+    @staticmethod
+    def _factory_catalog(
+        node: object,
+        registry: WorkforceRegistrySnapshot,
+    ) -> tuple[CapabilityCatalogItem, ...]:
+        """Project only relevant authoritative catalog entries into CapabilityFactory.
+
+        Workforce matching and unit-level capability resolution remain separate.  The
+        latter still needs the Backend snapshot to reuse tool-backed capabilities when
+        it builds a canonical draft; omitting it made otherwise available dependencies
+        disappear at the factory boundary.
+        """
+        from genesis.control_plane.workforce.models import CapabilityNode
+
+        if not isinstance(node, CapabilityNode):
+            raise TypeError("node must be a CapabilityNode")
+        required = set(node.required_tool_ids) | set(node.required_capability_ids)
+        return tuple(
+            profile.catalog_item
+            for profile in registry.capability_profiles
+            if profile.catalog_item.capability_id in required
+            or required.intersection(profile.catalog_item.backing_tool_ids)
+        )
 
     @classmethod
     def _dependencies(

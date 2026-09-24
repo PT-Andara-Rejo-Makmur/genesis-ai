@@ -46,6 +46,8 @@ class DeterministicIntegrationPlanner:
         if requested and not state.observations:
             raw_input = request.get("input", {})
             arguments = dict(raw_input) if isinstance(raw_input, Mapping) else {}
+            if "message" not in arguments and isinstance(arguments.get("request"), str):
+                arguments = {"message": arguments["request"]}
             return AgenticDecision(
                 kind=AgenticActionKind.TOOL,
                 tool_intent=ToolCallIntent(tool_id=requested[0], arguments=arguments),
@@ -62,9 +64,8 @@ class DeterministicIntegrationPlanner:
             kind=AgenticActionKind.FINISH,
             output={
                 "summary": "Governed deterministic runtime completed.",
-                "tool_status": state.observations[-1].status
-                if state.observations
-                else "NOT_REQUESTED",
+                "findings": [],
+                "evidence_refs": [],
             },
             planner_usage=usage,
         )
