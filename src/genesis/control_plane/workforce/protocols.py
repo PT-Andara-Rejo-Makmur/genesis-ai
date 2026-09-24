@@ -6,6 +6,7 @@ from typing import Protocol
 from genesis.control_plane.workforce.models import (
     CapabilityMatch,
     CapabilityNode,
+    InterpretedResponsibility,
     RequirementUnderstanding,
     WorkforceRegistrySnapshot,
     WorkforceRequirement,
@@ -14,6 +15,12 @@ from genesis.control_plane.workforce.models import (
 
 class RequirementInterpreter(Protocol):
     async def interpret(self, requirement: WorkforceRequirement) -> RequirementUnderstanding: ...
+
+
+class ResponsibilityDecomposer(Protocol):
+    async def decompose(
+        self, understanding: RequirementUnderstanding
+    ) -> tuple[InterpretedResponsibility, ...]: ...
 
 
 class CapabilityMatcher(Protocol):

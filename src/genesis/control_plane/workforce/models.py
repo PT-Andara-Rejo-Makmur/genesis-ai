@@ -117,11 +117,30 @@ class InterpretedResponsibility(BaseModel):
     scope_refs: tuple[str, ...] = ()
 
 
+class ResponsibilityCandidate(BaseModel):
+    """Interpreted responsibility semantics before decomposition decisions."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    identity: str = Field(min_length=3, max_length=128)
+    purpose: str = Field(min_length=1)
+    parent_hint: str | None = Field(default=None, min_length=3, max_length=128)
+    child_identities: tuple[str, ...] = ()
+    input_semantics: tuple[str, ...] = ()
+    output_semantics: tuple[str, ...] = ()
+    domain_tags: tuple[str, ...] = ()
+    required_capability_ids: tuple[str, ...] = ()
+    required_skill_ids: tuple[str, ...] = ()
+    required_tool_ids: tuple[str, ...] = ()
+    permission_refs: tuple[str, ...] = ()
+    scope_refs: tuple[str, ...] = ()
+
+
 class RequirementUnderstanding(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     normalized_requirement: str
     root_identity: str
-    responsibilities: tuple[InterpretedResponsibility, ...] = Field(min_length=1)
+    root_purpose: str = Field(min_length=1)
+    candidates: tuple[ResponsibilityCandidate, ...] = Field(min_length=1)
     rationale: tuple[str, ...] = Field(min_length=1)
 
 
@@ -260,4 +279,3 @@ class WorkforceAssuranceError(ValueError):
     def __init__(self, findings: tuple[AssuranceFinding, ...]) -> None:
         super().__init__("Workforce plan failed assurance")
         self.findings = findings
-

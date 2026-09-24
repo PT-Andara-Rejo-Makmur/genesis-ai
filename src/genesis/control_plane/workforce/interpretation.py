@@ -1,128 +1,115 @@
-"""Deterministic requirement interpretation behind a future ModelGateway port."""
+"""Generic deterministic interpretation behind a future ModelGateway adapter."""
 
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
 
 from genesis.control_plane.workforce.models import (
-    InterpretedResponsibility,
     RequirementUnderstanding,
+    ResponsibilityCandidate,
     ResponsibilityRequirement,
     WorkforceRequirement,
 )
 
-
-@dataclass(frozen=True, slots=True)
-class ResponsibilityRule:
-    identity: str
-    phrases: tuple[str, ...]
-    purpose: str
-    parent_identity: str | None = None
-    input_semantics: tuple[str, ...] = ()
-    output_semantics: tuple[str, ...] = ()
-    domain_tags: tuple[str, ...] = ()
-
-
-DEFAULT_RESPONSIBILITY_RULES = (
-    ResponsibilityRule(
-        identity="schedule.monitoring",
-        phrases=("schedule monitoring", "monitor schedule", "pemantauan jadwal"),
-        purpose="Monitor schedule performance and surface measurable variance.",
-        input_semantics=("schedule baseline", "schedule observation"),
-        output_semantics=("schedule variance finding",),
-        domain_tags=("monitoring", "performance", "schedule"),
-    ),
-    ResponsibilityRule(
-        identity="quality.monitoring",
-        phrases=("quality monitoring", "monitor quality", "pemantauan kualitas"),
-        purpose="Monitor quality signals and coordinate narrower quality checks.",
-        input_semantics=("quality observation",),
-        output_semantics=("quality finding",),
-        domain_tags=("quality", "monitoring", "compliance", "defect"),
-    ),
-    ResponsibilityRule(
-        identity="material.compliance",
-        phrases=("material compliance", "kepatuhan material"),
-        purpose="Evaluate material observations against supplied compliance criteria.",
-        parent_identity="quality.monitoring",
-        input_semantics=("material observation", "compliance criteria"),
-        output_semantics=("material compliance finding",),
-        domain_tags=("quality", "compliance"),
-    ),
-    ResponsibilityRule(
-        identity="defect.detection",
-        phrases=("defect detection", "detect defects", "deteksi cacat"),
-        purpose="Detect and report observable defects without authorizing remediation.",
-        parent_identity="quality.monitoring",
-        input_semantics=("quality observation",),
-        output_semantics=("defect finding",),
-        domain_tags=("quality", "defect"),
-    ),
-    ResponsibilityRule(
-        identity="vendor.risk.analysis",
-        phrases=("vendor risk analysis", "vendor risk", "analisis risiko vendor"),
-        purpose="Analyze vendor risk signals and produce reviewable recommendations.",
-        input_semantics=("vendor evidence", "risk criteria"),
-        output_semantics=("vendor risk finding",),
-        domain_tags=("vendor", "risk", "analysis"),
-    ),
+_DECOMPOSITION_INTRODUCTION = re.compile(
+    r"\b(?:across|through|via|melalui|dengan area|mencakup area)\b\s*:?",
+    re.IGNORECASE,
 )
+_NESTING_MARKER = re.compile(
+    r"\b(?:including|includes|covering|covers|comprising|termasuk|mencakup)\b\s*:?",
+    re.IGNORECASE,
+)
+_LEADING_ACTIONS = {
+    "analyze",
+    "build",
+    "coordinate",
+    "create",
+    "kelola",
+    "koordinasikan",
+    "manage",
+    "monitor",
+    "orchestrate",
+    "oversee",
+    "plan",
+    "rancang",
+}
+_IDENTITY_STOPWORDS = {
+    "a",
+    "an",
+    "and",
+    "dan",
+    "for",
+    "of",
+    "the",
+    "untuk",
+    "with",
+    "yang",
+}
 
 
 class DeterministicRequirementInterpreter:
-    """A replaceable interpreter with no provider dependency or side effects."""
-
-    def __init__(
-        self,
-        rules: tuple[ResponsibilityRule, ...] = DEFAULT_RESPONSIBILITY_RULES,
-    ) -> None:
-        self._rules = tuple(sorted(rules, key=lambda item: item.identity))
+    """Extract objective and generic responsibility expressions without domain knowledge."""
 
     async def interpret(self, requirement: WorkforceRequirement) -> RequirementUnderstanding:
         normalized = " ".join(requirement.requirement.statement.casefold().split())
         if requirement.responsibility_hints:
-            responsibilities = self._from_hints(requirement)
-            root_identity = self._root_identity(responsibilities)
+            candidates = self._from_hints(requirement)
+            root_identity = self._root_identity(candidates)
+            root_purpose = next(
+                item.purpose for item in candidates if item.identity == root_identity
+            )
             rationale: tuple[str, ...] = (
-                "Used caller-supplied structured responsibility semantics.",
+                "Interpreted caller-supplied structured responsibility semantics.",
             )
         else:
-            responsibilities = self._from_rules(requirement, normalized)
-            root_identity = self._root_identity(responsibilities)
+            root_phrase, body = self._objective_and_body(normalized)
+            root_identity = self._identity(root_phrase)
+            candidates = self._from_generic_syntax(requirement, root_identity, body)
+            root_purpose = requirement.requirement.statement.strip()
             rationale = (
-                "Applied deterministic responsibility rules; a ModelGateway interpreter can "
-                "replace this port.",
-                "Decomposition stops at responsibilities with explicit input, output, failure, "
-                "and evaluation semantics.",
+                "Extracted objective, responsibility lists, and nested clauses using generic "
+                "deterministic syntax.",
+                "Atomicity, parent assignment, and bounded hierarchy remain decomposition "
+                "decisions.",
             )
         return RequirementUnderstanding(
             normalized_requirement=normalized,
             root_identity=root_identity,
-            responsibilities=responsibilities,
+            root_purpose=root_purpose,
+            candidates=candidates,
             rationale=rationale,
         )
 
     def _from_hints(
         self, requirement: WorkforceRequirement
-    ) -> tuple[InterpretedResponsibility, ...]:
+    ) -> tuple[ResponsibilityCandidate, ...]:
         context = requirement.requirement.execution_context
+        child_map: dict[str, list[str]] = {}
+        for hint in requirement.responsibility_hints:
+            if hint.parent_identity is not None:
+                child_map.setdefault(hint.parent_identity, []).append(hint.identity)
         return tuple(
-            self._from_hint(hint, context.permission_refs, context.scope_refs)
+            self._candidate_from_hint(
+                hint,
+                tuple(sorted(set(child_map.get(hint.identity, ())))),
+                context.permission_refs,
+                context.scope_refs,
+            )
             for hint in sorted(requirement.responsibility_hints, key=lambda item: item.identity)
         )
 
     @staticmethod
-    def _from_hint(
+    def _candidate_from_hint(
         hint: ResponsibilityRequirement,
+        child_identities: tuple[str, ...],
         inherited_permissions: tuple[str, ...],
         inherited_scopes: tuple[str, ...],
-    ) -> InterpretedResponsibility:
-        return InterpretedResponsibility(
+    ) -> ResponsibilityCandidate:
+        return ResponsibilityCandidate(
             identity=hint.identity,
             purpose=hint.purpose,
-            parent_identity=hint.parent_identity,
-            atomic=hint.atomic,
+            parent_hint=hint.parent_identity,
+            child_identities=child_identities,
             input_semantics=tuple(sorted(set(hint.input_semantics))),
             output_semantics=tuple(sorted(set(hint.output_semantics))),
             domain_tags=tuple(sorted(set(hint.domain_tags))),
@@ -143,67 +130,159 @@ class DeterministicRequirementInterpreter:
             ),
         )
 
-    def _from_rules(
-        self, requirement: WorkforceRequirement, normalized: str
-    ) -> tuple[InterpretedResponsibility, ...]:
-        matched = [rule for rule in self._rules if any(p in normalized for p in rule.phrases)]
-        matched_ids = {rule.identity for rule in matched}
-        for rule in self._rules:
-            if rule.identity in matched_ids:
-                continue
-            if any(item.parent_identity == rule.identity for item in matched):
-                matched.append(rule)
-                matched_ids.add(rule.identity)
-
-        root_identity = self._derive_root_identity(normalized)
-        child_tags = {tag for rule in matched for tag in rule.domain_tags}
+    def _from_generic_syntax(
+        self,
+        requirement: WorkforceRequirement,
+        root_identity: str,
+        body: str,
+    ) -> tuple[ResponsibilityCandidate, ...]:
         context = requirement.requirement.execution_context
-        root = InterpretedResponsibility(
+        parsed: list[ResponsibilityCandidate] = []
+        top_level_ids: list[str] = []
+        segments = self._top_level_segments(body)
+        for segment in segments:
+            nesting = _NESTING_MARKER.search(segment)
+            if nesting is None:
+                for phrase in self._list_items(segment):
+                    candidate = self._generic_candidate(
+                        phrase,
+                        permission_refs=context.permission_refs,
+                        scope_refs=context.scope_refs,
+                    )
+                    parsed.append(candidate)
+                    top_level_ids.append(candidate.identity)
+                continue
+            parent_phrase = segment[: nesting.start()].strip(" ,:-")
+            child_phrases = self._list_items(segment[nesting.end() :])
+            parent_identity = self._identity(parent_phrase)
+            child_ids = tuple(self._identity(phrase) for phrase in child_phrases)
+            parsed.append(
+                self._generic_candidate(
+                    parent_phrase,
+                    child_identities=child_ids,
+                    permission_refs=context.permission_refs,
+                    scope_refs=context.scope_refs,
+                )
+            )
+            top_level_ids.append(parent_identity)
+            parsed.extend(
+                self._generic_candidate(
+                    phrase,
+                    parent_hint=parent_identity,
+                    permission_refs=context.permission_refs,
+                    scope_refs=context.scope_refs,
+                )
+                for phrase in child_phrases
+            )
+
+        merged = self._merge_candidates(parsed)
+        root = ResponsibilityCandidate(
             identity=root_identity,
             purpose=requirement.requirement.statement.strip(),
-            atomic=not matched,
+            child_identities=tuple(sorted(set(top_level_ids))),
             input_semantics=("business requirement",),
             output_semantics=("reviewable workforce result",),
-            domain_tags=tuple(sorted(child_tags or {root_identity.split(".")[0]})),
             required_capability_ids=tuple(sorted(set(requirement.required_capability_ids))),
             required_skill_ids=tuple(sorted(set(requirement.required_skill_ids))),
             required_tool_ids=tuple(sorted(set(requirement.required_tool_ids))),
             permission_refs=tuple(sorted(set(context.permission_refs))),
             scope_refs=tuple(sorted(set(context.scope_refs))),
         )
-        children = tuple(
-            InterpretedResponsibility(
-                identity=rule.identity,
-                purpose=rule.purpose,
-                parent_identity=(
-                    rule.parent_identity if rule.parent_identity in matched_ids else root_identity
-                ),
-                atomic=not any(item.parent_identity == rule.identity for item in matched),
-                input_semantics=rule.input_semantics,
-                output_semantics=rule.output_semantics,
-                domain_tags=tuple(sorted(set(rule.domain_tags))),
-                permission_refs=tuple(sorted(set(context.permission_refs))),
-                scope_refs=tuple(sorted(set(context.scope_refs))),
-            )
-            for rule in sorted(matched, key=lambda item: item.identity)
+        return (root, *merged)
+
+    @staticmethod
+    def _objective_and_body(normalized: str) -> tuple[str, str]:
+        introduction = _DECOMPOSITION_INTRODUCTION.search(normalized)
+        if introduction is None:
+            return DeterministicRequirementInterpreter._strip_leading_action(normalized), ""
+        objective = DeterministicRequirementInterpreter._strip_leading_action(
+            normalized[: introduction.start()]
         )
-        return (root, *children)
+        return objective, normalized[introduction.end() :].strip(" .")
 
     @staticmethod
-    def _root_identity(responsibilities: tuple[InterpretedResponsibility, ...]) -> str:
-        roots = tuple(item.identity for item in responsibilities if item.parent_identity is None)
-        candidates = roots or tuple(item.identity for item in responsibilities)
-        return sorted(candidates)[0]
+    def _strip_leading_action(value: str) -> str:
+        tokens = re.findall(r"[a-z0-9]+", value.casefold())
+        while tokens and tokens[0] in _LEADING_ACTIONS | {"a", "an", "the", "to"}:
+            tokens.pop(0)
+        return " ".join(tokens) or "general requirement"
 
     @staticmethod
-    def _derive_root_identity(normalized: str) -> str:
-        if "vendor" in normalized and ("performance" in normalized or "kinerja" in normalized):
-            return "vendor.performance"
-        tokens = re.findall(r"[a-z0-9]+", normalized)
-        meaningful = [
+    def _top_level_segments(body: str) -> tuple[str, ...]:
+        if not body:
+            return ()
+        values: list[str] | tuple[str, ...]
+        if ";" in body:
+            values = body.split(";")
+        elif _NESTING_MARKER.search(body):
+            values = (body,)
+        else:
+            values = re.split(r",|\band\b|\bdan\b|\bserta\b", body)
+        return tuple(value.strip(" .,:-") for value in values if value.strip(" .,:-"))
+
+    @staticmethod
+    def _list_items(value: str) -> tuple[str, ...]:
+        parts = re.split(r",|\band\b|\bdan\b|\bserta\b", value)
+        return tuple(
+            re.sub(r"^(?:and|dan|serta)\s+", "", part.strip(" .,:-"))
+            for part in parts
+            if part.strip(" .,:-")
+        )
+
+    @classmethod
+    def _generic_candidate(
+        cls,
+        phrase: str,
+        *,
+        parent_hint: str | None = None,
+        child_identities: tuple[str, ...] = (),
+        permission_refs: tuple[str, ...],
+        scope_refs: tuple[str, ...],
+    ) -> ResponsibilityCandidate:
+        identity = cls._identity(phrase)
+        return ResponsibilityCandidate(
+            identity=identity,
+            purpose=f"Handle the bounded responsibility: {phrase.strip()}.",
+            parent_hint=parent_hint,
+            child_identities=tuple(sorted(set(child_identities))),
+            input_semantics=(f"{identity} input",),
+            output_semantics=(f"{identity} result",),
+            permission_refs=tuple(sorted(set(permission_refs))),
+            scope_refs=tuple(sorted(set(scope_refs))),
+        )
+
+    @staticmethod
+    def _merge_candidates(
+        candidates: list[ResponsibilityCandidate],
+    ) -> tuple[ResponsibilityCandidate, ...]:
+        merged: dict[str, ResponsibilityCandidate] = {}
+        for candidate in candidates:
+            existing = merged.get(candidate.identity)
+            if existing is None:
+                merged[candidate.identity] = candidate
+                continue
+            merged[candidate.identity] = existing.model_copy(
+                update={
+                    "parent_hint": existing.parent_hint or candidate.parent_hint,
+                    "child_identities": tuple(
+                        sorted(set(existing.child_identities) | set(candidate.child_identities))
+                    ),
+                }
+            )
+        return tuple(merged[key] for key in sorted(merged))
+
+    @staticmethod
+    def _root_identity(candidates: tuple[ResponsibilityCandidate, ...]) -> str:
+        roots = tuple(item.identity for item in candidates if item.parent_hint is None)
+        choices = roots or tuple(item.identity for item in candidates)
+        return sorted(choices)[0]
+
+    @staticmethod
+    def _identity(value: str) -> str:
+        tokens = [
             token
-            for token in tokens
-            if token not in {"agent", "buat", "create", "untuk", "and", "dan", "yang"}
+            for token in re.findall(r"[a-z0-9]+", value.casefold())
+            if token not in _IDENTITY_STOPWORDS
         ]
-        identity = ".".join(meaningful[:4]) or "general.requirement"
+        identity = ".".join(tokens) or "general.requirement"
         return identity[:128]

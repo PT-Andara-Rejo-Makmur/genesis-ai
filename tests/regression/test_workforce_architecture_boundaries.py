@@ -79,3 +79,17 @@ def test_workforce_source_does_not_encode_census_targets_or_agent_classes() -> N
         assert census not in source
     assert "class BusinessAgent" not in source
 
+
+def test_workforce_production_has_no_vendor_fixture_knowledge() -> None:
+    source = "\n".join(
+        path.read_text(encoding="utf-8") for path in sorted(WORKFORCE_ROOT.rglob("*.py"))
+    ).casefold()
+    fixture_terms = (
+        "vendor.performance",
+        "schedule.monitoring",
+        "quality.monitoring",
+        "material.compliance",
+        "defect.detection",
+        "vendor.risk.analysis",
+    )
+    assert all(term not in source for term in fixture_terms)

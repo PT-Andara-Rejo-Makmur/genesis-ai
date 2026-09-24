@@ -21,7 +21,7 @@ from genesis.control_plane.workforce.models import (
 
 class WorkforceAssurance:
     def validate_understanding(self, understanding: RequirementUnderstanding) -> None:
-        identities = Counter(item.identity for item in understanding.responsibilities)
+        identities = Counter(item.identity for item in understanding.candidates)
         findings = tuple(
             AssuranceFinding(
                 code=AssuranceCode.DUPLICATE_CAPABILITY,

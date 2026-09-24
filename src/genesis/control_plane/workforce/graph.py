@@ -7,7 +7,7 @@ import hashlib
 from genesis.control_plane.workforce.models import (
     CapabilityGraph,
     CapabilityNode,
-    RequirementUnderstanding,
+    InterpretedResponsibility,
 )
 
 
@@ -22,10 +22,15 @@ class CapabilityGraphBuilder:
             raise ValueError("max_depth must be between 0 and 8")
         self._max_depth = max_depth
 
-    def build(self, understanding: RequirementUnderstanding) -> CapabilityGraph:
-        by_identity = {item.identity: item for item in understanding.responsibilities}
+    def build(
+        self,
+        *,
+        root_identity: str,
+        responsibilities: tuple[InterpretedResponsibility, ...],
+    ) -> CapabilityGraph:
+        by_identity = {item.identity: item for item in responsibilities}
         node_ids = {
-            identity: stable_id("node", understanding.root_identity, identity)
+            identity: stable_id("node", root_identity, identity)
             for identity in by_identity
         }
 
@@ -48,7 +53,7 @@ class CapabilityGraphBuilder:
                 parent_node_id=(
                     node_ids.get(
                         item.parent_identity,
-                        stable_id("node", understanding.root_identity, item.parent_identity),
+                        stable_id("node", root_identity, item.parent_identity),
                     )
                     if item.parent_identity is not None
                     else None
@@ -66,12 +71,12 @@ class CapabilityGraphBuilder:
                 scope_refs=item.scope_refs,
             )
             for item in sorted(
-                understanding.responsibilities,
+                responsibilities,
                 key=lambda value: (depth_for(value.identity), value.identity),
             )
         )
         return CapabilityGraph(
-            root_node_id=node_ids[understanding.root_identity],
+            root_node_id=node_ids[root_identity],
             nodes=nodes,
             max_depth=self._max_depth,
         )

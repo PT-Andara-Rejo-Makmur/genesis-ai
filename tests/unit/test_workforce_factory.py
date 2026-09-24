@@ -24,7 +24,13 @@ from genesis.runtime.limits import ExecutionBudget
 CONTRACTS_ROOT = Path(__file__).resolve().parents[3] / "alos-contracts"
 
 
-def factory_requirement(statement: str) -> FactoryRequirement:
+def factory_requirement(
+    statement: str,
+    *,
+    permission_refs: tuple[str, ...] = ("vendor.read",),
+    scope_refs: tuple[str, ...] = ("scope.project.vendor",),
+    correlation_id: str = "corr_workforce_001",
+) -> FactoryRequirement:
     return FactoryRequirement.model_validate(
         {
             "execution_context": {
@@ -36,10 +42,10 @@ def factory_requirement(statement: str) -> FactoryRequirement:
                     "role": "REQUESTER",
                     "authority_level": "REQUESTER",
                 },
-                "permission_refs": ["vendor.read"],
-                "scope_refs": ["scope.project.vendor"],
+                "permission_refs": list(permission_refs),
+                "scope_refs": list(scope_refs),
                 "data_classification": "INTERNAL",
-                "correlation_id": "corr_workforce_001",
+                "correlation_id": correlation_id,
             },
             "statement": statement,
         }
@@ -56,8 +62,9 @@ def vendor_requirement(statement: str | None = None) -> WorkforceRequirement:
         requirement=factory_requirement(
             statement
             or (
-                "Coordinate vendor performance with schedule monitoring, quality monitoring "
-                "covering material compliance and defect detection, and vendor risk analysis."
+                "Coordinate vendor project performance across schedule monitoring; "
+                "quality monitoring including material compliance and defect detection; "
+                "vendor risk analysis."
             )
         ),
         required_skill_ids=("skill.vendor-analysis",),
@@ -78,7 +85,7 @@ def registry() -> WorkforceRegistrySnapshot:
         capability_profiles=(
             CapabilityProfile(
                 catalog_item=CapabilityCatalogItem(
-                    capability_id="vendor.performance",
+                    capability_id="vendor.project.performance",
                     version="1.0.0",
                     name="Vendor performance coordination",
                     purpose="Coordinate vendor performance evidence for human review",
@@ -105,29 +112,76 @@ def registry() -> WorkforceRegistrySnapshot:
     )
 
 
+def hr_requirement() -> WorkforceRequirement:
+    return WorkforceRequirement(
+        requirement=factory_requirement(
+            "Coordinate hr workforce operations across recruitment; onboarding including "
+            "identity verification and orientation scheduling; attendance monitoring; "
+            "training; employee performance analysis.",
+            permission_refs=("hr.read",),
+            scope_refs=("scope.hr",),
+            correlation_id="corr_workforce_hr_001",
+        ),
+        required_skill_ids=("skill.hr-analysis",),
+        model_policy_ref="model-policy.standard-v1",
+    )
+
+
+def hr_registry() -> WorkforceRegistrySnapshot:
+    return WorkforceRegistrySnapshot(
+        capability_profiles=(
+            CapabilityProfile(
+                catalog_item=CapabilityCatalogItem(
+                    capability_id="hr.workforce.operations",
+                    version="1.0.0",
+                    name="HR workforce operations",
+                    purpose="Coordinate HR workforce operations for human review",
+                    capability_type=CapabilityType.AGENT,
+                    permission_refs=("hr.read",),
+                    scope_refs=("scope.hr",),
+                    keywords=("hr", "workforce", "operations"),
+                ),
+                input_semantics=("business requirement",),
+                output_semantics=("reviewable workforce result",),
+                skill_ids=("skill.hr-analysis",),
+            ),
+        ),
+        dependencies=(
+            RegistryDependency(
+                dependency_id="skill.hr-analysis",
+                kind=DependencyKind.SKILL,
+            ),
+            RegistryDependency(
+                dependency_id="model-policy.standard-v1",
+                kind=DependencyKind.MODEL_POLICY,
+            ),
+        ),
+    )
+
+
 @pytest.mark.asyncio
 async def test_workforce_factory_builds_parent_sub_and_sub_sub_drafts() -> None:
     plan = await workforce_factory().plan(vendor_requirement(), registry())
 
     nodes = {item.capability_identity: item for item in plan.capability_graph.nodes}
     assert tuple(nodes) == (
-        "vendor.performance",
+        "vendor.project.performance",
         "quality.monitoring",
         "schedule.monitoring",
         "vendor.risk.analysis",
         "defect.detection",
         "material.compliance",
     )
-    assert nodes["vendor.performance"].depth == 0
+    assert nodes["vendor.project.performance"].depth == 0
     assert nodes["quality.monitoring"].depth == 1
     assert nodes["material.compliance"].depth == 2
     assert nodes["material.compliance"].parent_node_id == nodes["quality.monitoring"].node_id
     assert nodes["defect.detection"].parent_node_id == nodes["quality.monitoring"].node_id
 
     agents = {item.node_id: item for item in plan.planned_agents}
-    root_agent = agents[nodes["vendor.performance"].node_id]
+    root_agent = agents[nodes["vendor.project.performance"].node_id]
     assert root_agent.capability_decision == "REUSE"
-    assert root_agent.capability_ref == "vendor.performance"
+    assert root_agent.capability_ref == "vendor.project.performance"
     assert root_agent.factory_result is None
     assert root_agent.readiness == "NEEDS_CONFIGURATION"
 
@@ -168,11 +222,58 @@ async def test_same_requirement_and_registry_produce_identical_plan() -> None:
 
 
 @pytest.mark.asyncio
+async def test_generic_hr_requirement_builds_hierarchy_and_reuses_root() -> None:
+    requirement = hr_requirement()
+    plan = await workforce_factory().plan(requirement, hr_registry())
+
+    assert requirement.responsibility_hints == ()
+    nodes = {item.capability_identity: item for item in plan.capability_graph.nodes}
+    assert set(nodes) == {
+        "hr.workforce.operations",
+        "recruitment",
+        "onboarding",
+        "identity.verification",
+        "orientation.scheduling",
+        "attendance.monitoring",
+        "training",
+        "employee.performance.analysis",
+    }
+    assert nodes["hr.workforce.operations"].depth == 0
+    assert nodes["onboarding"].depth == 1
+    assert nodes["identity.verification"].depth == 2
+    assert nodes["orientation.scheduling"].parent_node_id == nodes["onboarding"].node_id
+    root = next(item for item in plan.planned_agents if item.parent_agent_id is None)
+    assert root.capability_decision == "REUSE"
+    assert root.capability_ref == "hr.workforce.operations"
+    assert all(item.lifecycle_state == "DRAFT" for item in plan.planned_agents)
+    assert plan.authoritative_state_changed is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("requirement", "snapshot"),
+    (
+        (vendor_requirement(), registry()),
+        (hr_requirement(), hr_registry()),
+    ),
+)
+async def test_generic_domain_plans_are_deterministic(
+    requirement: WorkforceRequirement,
+    snapshot: WorkforceRegistrySnapshot,
+) -> None:
+    service = workforce_factory()
+    first = await service.plan(requirement, snapshot)
+    second = await service.plan(requirement, snapshot)
+
+    assert first.model_dump(mode="json") == second.model_dump(mode="json")
+
+
+@pytest.mark.asyncio
 async def test_repeated_requirement_phrases_do_not_duplicate_planned_agents() -> None:
     repeated = vendor_requirement(
-        "Coordinate vendor performance with schedule monitoring and schedule monitoring, "
-        "quality monitoring with material compliance, material compliance, defect detection, "
-        "and vendor risk analysis."
+        "Coordinate vendor project performance across schedule monitoring; "
+        "schedule monitoring; quality monitoring including material compliance, "
+        "material compliance and defect detection; vendor risk analysis."
     )
     plan = await workforce_factory().plan(repeated, registry())
 
