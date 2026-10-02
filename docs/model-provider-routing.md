@@ -117,6 +117,9 @@ There are at most two transport attempts, with a 100ms bounded delay. Retry appl
 failure before inference, 429/502/503/504, and discovery transport failure. POST read timeout or ambiguous
 network reset is not repeated because inference may already have run. 400/401/403/404/422 and 500 are
 not retried. Each attempt has a configurable timeout; runtime's cumulative deadline also remains enforced.
+If a retry follows an HTTP failure of a completion POST, even a subsequent 200 cannot certify the
+earlier attempt's usage. It fails as PROVIDER_USAGE_UNAVAILABLE before output is admitted. A retry
+after a pre-inference connection failure can succeed normally. No previous attempt is counted as free.
 
 Provider prompt_tokens/completion_tokens are required nonnegative integers. Missing/invalid usage fails
 before model output/tool intent can be admitted; no tokenizer estimate or fake 0 is reported.

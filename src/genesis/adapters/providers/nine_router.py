@@ -50,6 +50,7 @@ class NineRouterProviderAdapter:
         client = self._client or httpx.AsyncClient(trust_env=False, follow_redirects=False)
         response: httpx.Response | None = None
         failure: ProviderFailure | None = None
+        earlier_usage_unknown = False
         try:
             for attempt in range(2):
                 uncertain_transport = False
@@ -67,6 +68,9 @@ class NineRouterProviderAdapter:
                     )
                     status = response.status_code
                     if status == 200:
+                        if earlier_usage_unknown:
+                            # The successful retry cannot certify usage of the earlier POST.
+                            raise ProviderFailure("PROVIDER_USAGE_UNAVAILABLE", usage_unknown=True)
                         return response
                     code = (
                         "PROVIDER_AUTHENTICATION_FAILED"
@@ -99,6 +103,7 @@ class NineRouterProviderAdapter:
                 # Read timeout may mean inference already ran. Never repeat a possibly billed POST.
                 if method == "POST" and uncertain_transport:
                     break
+                earlier_usage_unknown = earlier_usage_unknown or failure.usage_unknown
                 await asyncio.sleep(0.1)
         finally:
             if self._client is None:

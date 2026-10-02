@@ -208,6 +208,25 @@ async def test_http_failures_have_bounded_retries_and_safe_diagnostics(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("status", [429, 502, 503, 504])
+async def test_successful_retry_cannot_certify_usage_of_earlier_inference(status: int) -> None:
+    calls = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET":
+            return httpx.Response(200, json={"data": [{"id": "fixture-model"}]})
+        calls.append(request)
+        return httpx.Response(status) if len(calls) == 1 else httpx.Response(200, json=completion())
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as client:
+        with pytest.raises(ProviderFailure, match="PROVIDER_USAGE_UNAVAILABLE") as failure:
+            await NineRouterProviderAdapter(configuration(), client=client).complete(
+                model_request(), route_id="nine_router"
+            )
+    assert len(calls) == 2 and failure.value.usage_unknown
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("error", [httpx.ReadTimeout, httpx.ConnectError, httpx.ReadError])
 async def test_transport_failure_cannot_leak_secret_or_repeat_ambiguous_inference(
     error: type[httpx.TransportError],
