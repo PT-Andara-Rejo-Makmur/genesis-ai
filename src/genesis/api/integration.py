@@ -14,6 +14,10 @@ from pydantic import SecretStr
 from genesis.agents.definitions import AgentDefinition
 from genesis.config import Settings
 from genesis.contracts import CanonicalContractCatalog
+from genesis.model_gateway.budget.guard import ExecutionBudgetGuard
+from genesis.model_gateway.policy.static import StaticModelPolicy
+from genesis.model_gateway.routing.static import StaticModelRouter
+from genesis.model_gateway.service import GovernedModelGateway
 from genesis.model_gateway.types import ModelRequest, ModelResponse
 from genesis.runtime.agentic import (
     AgenticActionKind,
@@ -24,6 +28,8 @@ from genesis.runtime.agentic import (
     RuntimeAuthorization,
     ToolCallIntent,
 )
+from genesis.runtime.assistant.adapter import DeterministicBusinessAdapter
+from genesis.runtime.assistant.planner import BusinessAssistantPlanner
 from genesis.runtime.execution import BackendToolClient, ToolBoundaryContracts
 
 
@@ -84,7 +90,9 @@ class DeterministicResearchGateway:
         self._domain = domain
         self._suffix = hashlib.sha256(evidence_id.encode()).hexdigest()[:20]
 
-    async def complete(self, _request: ModelRequest) -> ModelResponse:
+    async def complete(
+        self, _request: ModelRequest, *, route_id: str = "deterministic.integration.research"
+    ) -> ModelResponse:
         content = {
             "findings": [
                 {
@@ -115,11 +123,30 @@ class DeterministicResearchGateway:
         }
         return ModelResponse(
             content=json.dumps(content),
-            route_id="deterministic.integration.research",
+            route_id=route_id,
             input_tokens=5,
             output_tokens=10,
             cost=0,
         )
+
+
+def research_gateway(*, evidence_id: str, domain: str, classification: str) -> GovernedModelGateway:
+    """The TEST research adapter receives the same policy and budget boundary as ARA reads."""
+    return GovernedModelGateway(
+        policy=StaticModelPolicy(
+            frozenset({"policy.evidence-bound-research.v1"}),
+            maximum_data_classification=classification,
+        ),
+        budget_guard=ExecutionBudgetGuard(),
+        router=StaticModelRouter(
+            {
+                "deterministic.research": DeterministicResearchGateway(
+                    evidence_id=evidence_id, domain=domain
+                )
+            },
+            {"policy.evidence-bound-research.v1": "deterministic.research"},
+        ),
+    )
 
 
 class BackendCancellationProbe:
@@ -180,10 +207,26 @@ async def run_deterministic_invocation(
         client=http_client,
     )
     try:
+        business = definition.agent_id in {"ara.workspace-assistant", "ara.business-reader"}
+        gateway = GovernedModelGateway(
+            policy=StaticModelPolicy(
+                frozenset({"ara.deterministic"}),
+                maximum_data_classification=str(
+                    run_request["execution_context"]["data_classification"]
+                ),
+            ),
+            budget_guard=ExecutionBudgetGuard(),
+            router=StaticModelRouter(
+                {"ara.deterministic": DeterministicBusinessAdapter()},
+                {"ara.deterministic": "ara.deterministic"},
+            ),
+        )
         engine = AgentRuntimeEngine(
             contracts=contracts,
-            planner=DeterministicIntegrationPlanner(),
-            model_gateway=DisabledModelGateway(),
+            planner=BusinessAssistantPlanner(model_gateway=gateway)
+            if business
+            else DeterministicIntegrationPlanner(),
+            model_gateway=gateway if business else DisabledModelGateway(),
             tool_client=tool_client,
             cancellation_probe=cancellation,
         )

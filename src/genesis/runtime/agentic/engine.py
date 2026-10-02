@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
@@ -253,6 +254,42 @@ class AgentRuntimeEngine:
                     state,
                     decision,
                     tool_results,
+                )
+                # Backend observations can introduce current canonical evidence. Validate lineage
+                # before admitting it; model/tool text never becomes instruction authority.
+                tool_result = tool_results[-1]
+                context = request["execution_context"]
+                evidence = tool_result.get("evidence_refs", [])
+                admitted = known_evidence(
+                    {"execution_context": context, "context_bundle": {"evidence_refs": evidence}}
+                )
+                for evidence_id, item in admitted.items():
+                    expected_hash = (
+                        "sha256:"
+                        + hashlib.sha256(
+                            json.dumps(tool_result.get("output"), sort_keys=True).encode()
+                        ).hexdigest()
+                    )
+                    if (
+                        any(
+                            item.get(key) != context[key]
+                            for key in ("tenant_id", "organization_id", "workspace_id")
+                        )
+                        or item.get("run_id") != state.run_id
+                        or item.get("correlation_id") != state.correlation_id
+                        or item.get("content_hash") != expected_hash
+                    ):
+                        raise fail(
+                            state,
+                            "TOOL_EVIDENCE_INVALID",
+                            "Tool evidence lineage is invalid.",
+                            StopReason.EVIDENCE_INSUFFICIENT,
+                        )
+                    known_evidence_catalog[evidence_id] = item
+                bundle = request.setdefault("context_bundle", {})
+                bundle["evidence_refs"] = list(known_evidence_catalog.values())
+                state = state.model_copy(
+                    update={"known_evidence_ids": tuple(known_evidence_catalog)}
                 )
                 continue
             if decision.kind is AgenticActionKind.DELEGATE:

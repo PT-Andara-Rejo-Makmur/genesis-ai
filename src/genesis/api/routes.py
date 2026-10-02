@@ -8,7 +8,7 @@ from genesis import __version__
 from genesis.agents.definitions import AgentDefinition
 from genesis.api.auth import verify_service_token
 from genesis.api.errors import InternalBoundaryError
-from genesis.api.integration import DeterministicResearchGateway, run_deterministic_invocation
+from genesis.api.integration import research_gateway, run_deterministic_invocation
 from genesis.api.models import HealthResponse, IntegrationDiagnosticResponse, SystemInfoResponse
 from genesis.config import Settings
 from genesis.contracts import CanonicalContractCatalog, ContractValidationError
@@ -325,9 +325,10 @@ async def run_deterministic_research(
     try:
         engine = ResearchEngine(
             contracts=_catalog(settings),
-            model_gateway=DeterministicResearchGateway(
+            model_gateway=research_gateway(
                 evidence_id=str(evidence_refs[0]["evidence_id"]),
                 domain=str(payload.get("domain", "TECHNOLOGY")),
+                classification=str(payload["execution_context"]["data_classification"]),
             ),
         )
         return await engine.research(payload)

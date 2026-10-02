@@ -46,22 +46,22 @@ from genesis.main import create_app as create_genesis_app
 
 WORKSPACE = Path(__file__).resolve().parents[3]
 CONTRACTS_ROOT = WORKSPACE / "alos-contracts"
-TOKEN = "-".join(("mvp2", "integration", "token"))
+TOKEN = "-".join(("workforce", "integration", "token"))
 
 
 def workforce_requirement() -> WorkforceRequirement:
     requirement = FactoryRequirement.model_validate(
         {
             "execution_context": {
-                "tenant_id": "tenant_mvp2",
-                "organization_id": "org_mvp2",
-                "workspace_id": "workspace_mvp2",
-                "actor_id": "actor_mvp2",
+                "tenant_id": "tenant_workforce",
+                "organization_id": "org_workforce",
+                "workspace_id": "workspace_workforce",
+                "actor_id": "actor_workforce",
                 "authority_context": {"role": "REQUESTER", "authority_level": "REQUESTER"},
                 "permission_refs": ["tools.diagnostic.execute"],
                 "scope_refs": ["scope.diagnostic"],
                 "data_classification": "INTERNAL",
-                "correlation_id": "corr_mvp2_e2e",
+                "correlation_id": "corr_workforce_e2e",
             },
             "statement": (
                 "Coordinate diagnostic operations, monitor one diagnostic task, and execute "
@@ -143,7 +143,7 @@ def workforce_registry() -> WorkforceRegistrySnapshot:
 
 
 @pytest.mark.asyncio
-async def test_mvp2_factory_governance_runtime_tool_and_audit_e2e() -> None:
+async def test_factory_governance_runtime_tool_and_audit_e2e() -> None:
     genesis_contracts = CanonicalContractCatalog(CONTRACTS_ROOT)
     plan = await WorkforceFactory(
         capability_factory=CapabilityFactory(contracts=genesis_contracts)
@@ -170,19 +170,19 @@ async def test_mvp2_factory_governance_runtime_tool_and_audit_e2e() -> None:
     governed_definition = {**definition, "approval_required": False}
     entry = await registry.register(
         governed_definition,
-        tenant_id="tenant_mvp2",
-        organization_id="org_mvp2",
-        workspace_id="workspace_mvp2",
-        actor_id="actor_mvp2",
-        correlation_id="corr_mvp2_e2e",
+        tenant_id="tenant_workforce",
+        organization_id="org_workforce",
+        workspace_id="workspace_workforce",
+        actor_id="actor_workforce",
+        correlation_id="corr_workforce_e2e",
     )
     assert entry.state is RegistryState.DRAFT
 
     principal = Principal(
-        actor_id="actor_mvp2",
-        tenant_id="tenant_mvp2",
-        organization_id="org_mvp2",
-        workspace_id="workspace_mvp2",
+        actor_id="actor_workforce",
+        tenant_id="tenant_workforce",
+        organization_id="org_workforce",
+        workspace_id="workspace_workforce",
         permissions=frozenset({"tools.diagnostic.execute"}),
         scopes=frozenset({"scope.diagnostic"}),
         roles=frozenset({"diagnostic_runner"}),
@@ -225,13 +225,13 @@ async def test_mvp2_factory_governance_runtime_tool_and_audit_e2e() -> None:
     orchestrator = AuthoritativeRuntimeOrchestrator(authority=authority, genesis=genesis_client)
     payload = {
         "capability_id": definition["capability_ids"][0],
-        "input": {"workspace_id": "workspace_mvp2", "request": "echo governed proof"},
+        "input": {"workspace_id": "workspace_workforce", "request": "echo governed proof"},
         "requested_tool_ids": ["diagnostic.echo"],
         "scope_refs": ["scope.diagnostic"],
         "execution_budget": {"max_tokens": 100, "max_steps": 3, "max_tool_calls": 1},
         "execution_mode": "TEST",
     }
-    token = correlation_id_context.set("corr_mvp2_e2e")
+    token = correlation_id_context.set("corr_workforce_e2e")
     try:
         with pytest.raises(ValueError, match="not ACTIVE"):
             await orchestrator.execute(
@@ -242,19 +242,19 @@ async def test_mvp2_factory_governance_runtime_tool_and_audit_e2e() -> None:
             workspace_id=entry.workspace_id,
             subject_id=entry.subject_id,
             version=entry.version,
-            actor_id="actor_it_mvp2",
-            decision_id="decision_mvp2_human",
+            actor_id="actor_it_workforce",
+            decision_id="decision_workforce_human",
             authority=DecisionAuthority.IT,
-            correlation_id="corr_mvp2_e2e",
+            correlation_id="corr_workforce_e2e",
         )
         entry = await registry.activate(
             tenant_id=entry.tenant_id,
             workspace_id=entry.workspace_id,
             subject_id=entry.subject_id,
             version=entry.version,
-            actor_id="actor_release_mvp2",
-            release_id="release_mvp2",
-            correlation_id="corr_mvp2_e2e",
+            actor_id="actor_release_workforce",
+            release_id="release_workforce",
+            correlation_id="corr_workforce_e2e",
         )
         completed = await orchestrator.execute(
             payload, principal=principal, agent=entry, test_mode_allowed=True
@@ -271,7 +271,7 @@ async def test_mvp2_factory_governance_runtime_tool_and_audit_e2e() -> None:
         completed.result.get("tool_results") if completed.result else None,
     )
     assert completed.root_run_id == completed.run_id
-    assert completed.correlation_id == "corr_mvp2_e2e"
+    assert completed.correlation_id == "corr_workforce_e2e"
     assert completed.usage_ref == f"urn:alos:usage:{completed.run_id}"
     assert completed.total_tokens == 6
     steps = await authority.list_steps(completed.run_id)
@@ -280,7 +280,7 @@ async def test_mvp2_factory_governance_runtime_tool_and_audit_e2e() -> None:
         "REQUESTED",
         "SUCCESS",
     ]
-    events = audit.list_events(tenant_id="tenant_mvp2")
+    events = audit.list_events(tenant_id="tenant_workforce")
     expected_events = {
         "registry.version.created",
         "registry.version.approved",
@@ -300,16 +300,16 @@ async def test_backend_cancellation_is_authoritative_and_audited() -> None:
     authority = AgentRunAuthority(contracts=contracts, audit=audit, allow_test_drafts=True)
     registry = AgentRegistry(contracts, audit)
     definition = {
-        "tenant_id": "tenant_mvp2",
-        "organization_id": "org_mvp2",
-        "workspace_id": "workspace_mvp2",
-        "agent_id": "agent.mvp2.cancel",
+        "tenant_id": "tenant_workforce",
+        "organization_id": "org_workforce",
+        "workspace_id": "workspace_workforce",
+        "agent_id": "agent.workforce.cancel",
         "agent_version": "1.0.0",
-        "owner_actor_id": "actor_mvp2",
+        "owner_actor_id": "actor_workforce",
         "name": "Cancellation proof",
         "purpose": "Prove Backend-owned cancellation and safe failure.",
         "risk_level": "LOW",
-        "capability_ids": ["capability.mvp2.cancel"],
+        "capability_ids": ["capability.workforce.cancel"],
         "skill_refs": [],
         "model_policy_ref": "policy.runtime-test",
         "tool_ids": [],
@@ -319,29 +319,29 @@ async def test_backend_cancellation_is_authoritative_and_audited() -> None:
     }
     draft = await registry.register(
         definition,
-        tenant_id="tenant_mvp2",
-        organization_id="org_mvp2",
-        workspace_id="workspace_mvp2",
-        actor_id="actor_mvp2",
-        correlation_id="corr_mvp2_cancel",
+        tenant_id="tenant_workforce",
+        organization_id="org_workforce",
+        workspace_id="workspace_workforce",
+        actor_id="actor_workforce",
+        correlation_id="corr_workforce_cancel",
     )
     started = await authority.begin(
         {
-            "run_id": "run_mvp2_cancel",
-            "root_run_id": "run_mvp2_cancel",
+            "run_id": "run_workforce_cancel",
+            "root_run_id": "run_workforce_cancel",
             "agent_id": draft.subject_id,
             "agent_version": draft.version,
-            "capability_id": "capability.mvp2.cancel",
+            "capability_id": "capability.workforce.cancel",
             "execution_context": {
-                "tenant_id": "tenant_mvp2",
-                "organization_id": "org_mvp2",
-                "workspace_id": "workspace_mvp2",
-                "actor_id": "actor_mvp2",
+                "tenant_id": "tenant_workforce",
+                "organization_id": "org_workforce",
+                "workspace_id": "workspace_workforce",
+                "actor_id": "actor_workforce",
                 "authority_context": {"role": "REQUESTER"},
                 "permission_refs": [],
                 "scope_refs": ["scope.diagnostic"],
                 "data_classification": "INTERNAL",
-                "correlation_id": "corr_mvp2_cancel",
+                "correlation_id": "corr_workforce_cancel",
                 "execution_budget": {"max_tokens": 10, "max_steps": 1},
             },
             "input": {},
@@ -352,21 +352,21 @@ async def test_backend_cancellation_is_authoritative_and_audited() -> None:
     )
     requested = await authority.request_cancel(
         started.run_id,
-        actor_id="actor_it_mvp2",
+        actor_id="actor_it_workforce",
         reason="Human requested safe cancellation.",
-        correlation_id="corr_mvp2_cancel",
+        correlation_id="corr_workforce_cancel",
     )
     cancelled = await authority.cancel(
         started.run_id,
-        actor_id="actor_it_mvp2",
+        actor_id="actor_it_workforce",
         reason="Cancellation acknowledged.",
-        correlation_id="corr_mvp2_cancel",
+        correlation_id="corr_workforce_cancel",
     )
     assert requested.status is AuthoritativeRunStatus.CANCEL_REQUESTED
     assert cancelled.status is AuthoritativeRunStatus.CANCELLED
     assert cancelled.error_code == "RUN_CANCELLED"
     assert {"run.cancel_requested", "run.cancelled"}.issubset(
-        {event.event_type for event in audit.list_events(tenant_id="tenant_mvp2")}
+        {event.event_type for event in audit.list_events(tenant_id="tenant_workforce")}
     )
 
 
@@ -374,27 +374,27 @@ async def test_backend_cancellation_is_authoritative_and_audited() -> None:
 async def test_ai_review_is_advisory_and_returned_release_cannot_activate() -> None:
     audit = InMemoryAuditRepository()
     authority = InMemoryReleaseAuthority(audit)
-    release_id = "release_mvp2_returned"
-    review_id = "review_mvp2_returned"
+    release_id = "release_workforce_returned"
+    review_id = "review_workforce_returned"
     await authority.create(
         release_id=release_id,
         review_id=review_id,
-        tenant_id="tenant_mvp2",
-        organization_id="org_mvp2",
-        workspace_id="workspace_mvp2",
-        subject_id="agent.mvp2.returned",
+        tenant_id="tenant_workforce",
+        organization_id="org_workforce",
+        workspace_id="workspace_workforce",
+        subject_id="agent.workforce.returned",
         subject_version="1.0.0",
         materiality=Materiality.NON_MATERIAL,
-        actor_id="actor_maker_mvp2",
-        correlation_id="corr_mvp2_returned",
+        actor_id="actor_maker_workforce",
+        correlation_id="corr_workforce_returned",
     )
     await authority.mark_implemented(
         release_id,
-        actor_id="actor_maker_mvp2",
-        correlation_id="corr_mvp2_returned",
+        actor_id="actor_maker_workforce",
+        correlation_id="corr_workforce_returned",
     )
     check = AssuranceEvaluator().evaluate(
-        test_id="mvp2_positive",
+        test_id="workforce_positive",
         category=TestCategory.POSITIVE,
         expected=ExpectedBehavior(status="SUCCESS"),
         observed=ObservedBehavior(status="SUCCESS"),
@@ -404,47 +404,47 @@ async def test_ai_review_is_advisory_and_returned_release_cannot_activate() -> N
         AutomatedAssuranceReport(
             checks=(check,), required_categories=frozenset({TestCategory.POSITIVE})
         ),
-        actor_id="actor_checker_mvp2",
-        correlation_id="corr_mvp2_returned",
+        actor_id="actor_checker_workforce",
+        correlation_id="corr_workforce_returned",
     )
     await authority.record_ai_review_package(
         release_id,
         ReviewPackageReference(
             review_id=review_id,
-            tenant_id="tenant_mvp2",
-            workspace_id="workspace_mvp2",
-            subject_id="agent.mvp2.returned",
+            tenant_id="tenant_workforce",
+            workspace_id="workspace_workforce",
+            subject_id="agent.workforce.returned",
             subject_version="1.0.0",
             contract_version="1.0.0",
-            evidence_uri="urn:alos:evidence:mvp2-returned",
+            evidence_uri="urn:alos:evidence:workforce-returned",
             recorded_at=datetime.now(UTC),
         ),
         actor_id="genesis_ai_review",
-        correlation_id="corr_mvp2_returned",
+        correlation_id="corr_workforce_returned",
     )
     assert authority.get(release_id).state is ReleaseState.AI_REVIEWED
     await authority.submit_for_it(
         release_id,
-        actor_id="actor_checker_mvp2",
-        correlation_id="corr_mvp2_returned",
+        actor_id="actor_checker_workforce",
+        correlation_id="corr_workforce_returned",
     )
     returned = await authority.record_it_decision(
         release_id,
         AuthoritativeDecision(
-            decision_id="decision_mvp2_returned",
+            decision_id="decision_workforce_returned",
             review_id=review_id,
             decision_type=AuthorityLevel.IT,
             outcome=DecisionOutcome.RETURNED,
-            decided_by="actor_it_mvp2",
+            decided_by="actor_it_workforce",
             rationale="Return the draft for correction.",
             decided_at=datetime.now(UTC),
         ),
-        correlation_id="corr_mvp2_returned",
+        correlation_id="corr_workforce_returned",
     )
     assert returned.state is ReleaseState.RETURNED
     with pytest.raises(ReleaseConflictError):
         await authority.release(
             release_id,
-            actor_id="actor_release_mvp2",
-            correlation_id="corr_mvp2_returned",
+            actor_id="actor_release_workforce",
+            correlation_id="corr_workforce_returned",
         )

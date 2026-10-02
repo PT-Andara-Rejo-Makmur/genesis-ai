@@ -226,7 +226,7 @@ def test_memory_ranker_preserves_only_selected_evidence_lineage() -> None:
     assert [item["evidence_id"] for item in ranked["evidence_refs"]] == ["evidence_owner_001"]
 
 
-def test_document_comparison_adapts_mvp1_negative_findings() -> None:
+def test_document_comparison_adapts_unverified_negative_findings() -> None:
     content_a = "Owner: Finance\nPolicy year: 2024"
     content_b = "Owner: Legal\nPolicy year: 2026"
     duplicate = ComparableDocument(
