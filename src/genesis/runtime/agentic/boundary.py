@@ -165,8 +165,22 @@ def usage(state: AgenticRuntimeState, started_clock: float) -> dict[str, Any]:
     routes = tuple(dict.fromkeys(state.route_ids))
     return {
         **({"provider": routes[0], "model": routes[0]} if len(routes) == 1 else {}),
-        "input_tokens": state.input_tokens,
-        "output_tokens": state.output_tokens,
+        **(
+            {"input_tokens": state.input_tokens, "output_tokens": state.output_tokens}
+            if not state.usage_unavailable
+            else {}
+        ),
+        "token_telemetry": "UNAVAILABLE" if state.usage_unavailable else "AVAILABLE",
+        "cost_telemetry": "UNAVAILABLE" if state.cost_unavailable else "AVAILABLE",
+        **(
+            {"provider_request_ids": list(state.provider_request_ids)}
+            if state.provider_request_ids
+            else {}
+        ),
         "latency_milliseconds": max(0, int((monotonic() - started_clock) * 1000)),
-        **({"estimated_cost": state.estimated_cost} if state.estimated_cost > 0 else {}),
+        **(
+            {"estimated_cost": state.estimated_cost}
+            if state.estimated_cost > 0 and not state.cost_unavailable
+            else {}
+        ),
     }

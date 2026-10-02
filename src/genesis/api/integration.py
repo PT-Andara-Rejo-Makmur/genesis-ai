@@ -15,6 +15,7 @@ from genesis.agents.definitions import AgentDefinition
 from genesis.config import Settings
 from genesis.contracts import CanonicalContractCatalog
 from genesis.model_gateway.budget.guard import ExecutionBudgetGuard
+from genesis.model_gateway.composition import build_model_gateway
 from genesis.model_gateway.policy.static import StaticModelPolicy
 from genesis.model_gateway.routing.static import StaticModelRouter
 from genesis.model_gateway.service import GovernedModelGateway
@@ -28,8 +29,10 @@ from genesis.runtime.agentic import (
     RuntimeAuthorization,
     ToolCallIntent,
 )
+from genesis.runtime.agentic.planner import ModelGatewayAgenticPlanner
 from genesis.runtime.assistant.adapter import DeterministicBusinessAdapter
 from genesis.runtime.assistant.planner import BusinessAssistantPlanner
+from genesis.runtime.assistant.production import ProductionBusinessPlanner
 from genesis.runtime.execution import BackendToolClient, ToolBoundaryContracts
 
 
@@ -182,7 +185,7 @@ class BackendCancellationProbe:
         }
 
 
-async def run_deterministic_invocation(
+async def run_runtime_invocation(
     *,
     settings: Settings,
     contracts: CanonicalContractCatalog,
@@ -190,8 +193,9 @@ async def run_deterministic_invocation(
     run_request: dict[str, Any],
     authorization: RuntimeAuthorization,
     http_client: httpx.AsyncClient | None = None,
+    provider_http_client: httpx.AsyncClient | None = None,
 ) -> dict[str, Any]:
-    """Execute the explicit TEST route through the real Backend ToolExecutor boundary."""
+    """Compose the selected canonical mode through the Backend ToolExecutor boundary."""
 
     if settings.ALOS_CONTRACTS_PATH is None:
         raise ValueError("ALOS_CONTRACTS_PATH is required for runtime integration")
@@ -208,25 +212,38 @@ async def run_deterministic_invocation(
     )
     try:
         business = definition.agent_id in {"ara.workspace-assistant", "ara.business-reader"}
-        gateway = GovernedModelGateway(
-            policy=StaticModelPolicy(
-                frozenset({"ara.deterministic"}),
-                maximum_data_classification=str(
-                    run_request["execution_context"]["data_classification"]
+        production = run_request.get("execution_mode") == "NORMAL"
+        gateway = (
+            build_model_gateway(settings, client=provider_http_client)
+            if production
+            else GovernedModelGateway(
+                policy=StaticModelPolicy(
+                    frozenset({"ara.deterministic"}),
+                    maximum_data_classification=str(
+                        run_request["execution_context"]["data_classification"]
+                    ),
                 ),
-            ),
-            budget_guard=ExecutionBudgetGuard(),
-            router=StaticModelRouter(
-                {"ara.deterministic": DeterministicBusinessAdapter()},
-                {"ara.deterministic": "ara.deterministic"},
-            ),
+                budget_guard=ExecutionBudgetGuard(),
+                router=StaticModelRouter(
+                    {"ara.deterministic": DeterministicBusinessAdapter()},
+                    {"ara.deterministic": "ara.deterministic"},
+                ),
+            )
         )
         engine = AgentRuntimeEngine(
             contracts=contracts,
-            planner=BusinessAssistantPlanner(model_gateway=gateway)
-            if business
-            else DeterministicIntegrationPlanner(),
-            model_gateway=gateway if business else DisabledModelGateway(),
+            planner=(
+                ProductionBusinessPlanner(model_gateway=gateway)
+                if business
+                else ModelGatewayAgenticPlanner(model_gateway=gateway)
+            )
+            if production
+            else (
+                BusinessAssistantPlanner(model_gateway=gateway)
+                if business
+                else DeterministicIntegrationPlanner()
+            ),
+            model_gateway=gateway if business or production else DisabledModelGateway(),
             tool_client=tool_client,
             cancellation_probe=cancellation,
         )

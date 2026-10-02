@@ -27,3 +27,17 @@ class ModelResponse(BaseModel):
     input_tokens: int = Field(ge=0)
     output_tokens: int = Field(ge=0)
     cost: float | None = Field(default=None, ge=0)
+
+
+class ProviderReadiness(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    status: Literal[
+        "CONNECTED", "MISCONFIGURED", "UNAVAILABLE", "AUTH_FAILED", "MODEL_SELECTION_REQUIRED"
+    ]
+    configured: bool = False
+    reachable: bool = False
+    authenticated: bool = False
+    model_selected: bool = False
+    available_model_ids: tuple[str, ...] = ()
+    selected_model_id: str | None = None
+    error_code: str | None = None

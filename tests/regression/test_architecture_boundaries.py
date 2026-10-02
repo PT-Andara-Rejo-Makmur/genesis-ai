@@ -28,6 +28,12 @@ def test_domain_does_not_import_framework_adapters() -> None:
     for path in SOURCE.rglob("*.py"):
         if "adapters" in path.relative_to(SOURCE).parts:
             continue
+        if path == SOURCE / "model_gateway" / "composition.py":
+            # The explicit composition root may wire transport implementations to protocols.
+            assert {
+                module for module in imported_modules(path) if module.startswith("genesis.adapters")
+            } == {"genesis.adapters.providers.disabled", "genesis.adapters.providers.nine_router"}
+            continue
         for module in imported_modules(path):
             if module.startswith(FORBIDDEN_DOMAIN_IMPORTS):
                 violations.append(f"{path.relative_to(ROOT)} imports {module}")

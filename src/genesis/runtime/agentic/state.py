@@ -138,6 +138,10 @@ def account_planner_usage(
             "input_tokens": state.input_tokens + usage.input_tokens,
             "output_tokens": state.output_tokens + usage.output_tokens,
             "estimated_cost": state.estimated_cost + (usage.estimated_cost or 0),
+            "cost_unavailable": state.cost_unavailable or usage.estimated_cost is None,
+            "provider_request_ids": (*state.provider_request_ids, usage.provider_request_id)
+            if usage.provider_request_id
+            else state.provider_request_ids,
             "route_ids": (
                 (*state.route_ids, usage.route_id)
                 if usage.route_id is not None
@@ -155,6 +159,10 @@ def account_model_response(
             "input_tokens": state.input_tokens + response.input_tokens,
             "output_tokens": state.output_tokens + response.output_tokens,
             "estimated_cost": state.estimated_cost + (response.cost or 0),
+            "cost_unavailable": state.cost_unavailable or response.cost is None,
+            "provider_request_ids": (*state.provider_request_ids, response.provider_request_id)
+            if response.provider_request_id
+            else state.provider_request_ids,
             "route_ids": (*state.route_ids, response.route_id),
         }
     )

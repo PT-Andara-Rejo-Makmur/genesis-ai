@@ -1,3 +1,4 @@
+from genesis.model_gateway.budget.guard import BudgetExceeded
 from genesis.model_gateway.interfaces import ModelBudgetGuard, ModelPolicy, ModelRouter
 from genesis.model_gateway.types import ModelRequest, ModelResponse
 
@@ -18,4 +19,20 @@ class GovernedModelGateway:
         self._policy.authorize(request)
         self._budget_guard.validate(request)
         route_id, adapter = self._router.route(request)
-        return await adapter.complete(request, route_id=route_id)
+        response = await adapter.complete(request, route_id=route_id)
+        if (
+            request.budget.max_tokens is not None
+            and response.input_tokens + response.output_tokens > request.budget.max_tokens
+        ):
+            raise BudgetExceeded(
+                "Reported provider tokens exceed the execution budget", response=response
+            )
+        if (
+            request.budget.max_cost is not None
+            and response.cost is not None
+            and response.cost > request.budget.max_cost
+        ):
+            raise BudgetExceeded(
+                "Reported provider cost exceeds the execution budget", response=response
+            )
+        return response

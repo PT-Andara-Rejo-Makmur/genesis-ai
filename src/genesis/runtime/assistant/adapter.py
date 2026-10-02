@@ -5,31 +5,7 @@ from typing import Any
 from uuid import uuid4
 
 from genesis.model_gateway.types import ModelRequest, ModelResponse
-
-
-def display(value: Any) -> str:
-    if value is None:
-        return "—"
-    if isinstance(value, bool):
-        return "Ya" if value else "Tidak"
-    if isinstance(value, dict):
-        return "\n".join(
-            f"{key.replace('_', ' ')}: {display(item)}"
-            for key, item in value.items()
-            if key
-            not in {
-                "instruction_authority",
-                "tenant_id",
-                "organization_id",
-                "workspace_id",
-                "actor_id",
-            }
-        )
-    if isinstance(value, list):
-        return "Belum ada data" if not value else "\n\n".join(display(item) for item in value[:20])
-    return {"UNAVAILABLE": "Belum Terhubung", "NOT_CONNECTED": "Belum Terhubung"}.get(
-        str(value), str(value)
-    )
+from genesis.runtime.assistant.sources import display as display
 
 
 class DeterministicBusinessAdapter:

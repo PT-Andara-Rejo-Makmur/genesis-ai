@@ -226,6 +226,57 @@ def test_memory_ranker_preserves_only_selected_evidence_lineage() -> None:
     assert [item["evidence_id"] for item in ranked["evidence_refs"]] == ["evidence_owner_001"]
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "mutation", ["missing_domain", "missing_finding_refs", "foreign_finding_ref", "fabricated_fact"]
+)
+async def test_research_provider_output_is_safe_for_persistence_and_current_facts(
+    mutation: str,
+) -> None:
+    class IncompleteGateway(StaticGateway):
+        async def complete(self, request: ModelRequest) -> ModelResponse:
+            response = await super().complete(request)
+            body = json.loads(response.content)
+            if mutation == "missing_domain":
+                body["findings"][0].pop("domain")
+            elif mutation == "missing_finding_refs":
+                body["recommendations"][0].pop("finding_ids")
+            elif mutation == "foreign_finding_ref":
+                body["recommendations"][0]["finding_ids"] = ["finding.foreign"]
+            else:
+                body["findings"][0]["statement"] = "Revenue = 999999999"
+            return response.model_copy(update={"content": json.dumps(body)})
+
+    payload = research_request()
+    production = mutation == "fabricated_fact"
+    if production:
+        ref = payload["context_bundle"]["evidence_refs"][0]
+        ref.update(
+            run_id=payload["run_id"],
+            correlation_id=payload["correlation_id"],
+            freshness="CURRENT",
+            instruction_authority=False,
+        )
+        payload["context_bundle"]["items"][0]["instruction_authority"] = False
+    engine = ResearchEngine(
+        contracts=CanonicalContractCatalog(CONTRACTS_ROOT),
+        model_gateway=IncompleteGateway(),
+        production=production,
+    )
+    if mutation in {"missing_finding_refs", "foreign_finding_ref"}:
+        with pytest.raises(ResearchOutputInvalid, match="finding references"):
+            await engine.research(payload)
+    else:
+        result = await engine.research(payload)
+        assert result["findings"][0]["domain"] == "MANAGEMENT"
+        if production:
+            assert result["findings"][0]["statement"] == "Retention is seven years."
+            assert "999999999" not in result["findings"][0]["statement"]
+            assert result["recommendations"][0]["finding_ids"] == [
+                result["findings"][0]["finding_id"]
+            ]
+
+
 def test_document_comparison_adapts_unverified_negative_findings() -> None:
     content_a = "Owner: Finance\nPolicy year: 2024"
     content_b = "Owner: Legal\nPolicy year: 2026"

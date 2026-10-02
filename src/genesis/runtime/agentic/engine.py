@@ -12,6 +12,8 @@ from typing import Any, cast
 
 from genesis.agents.definitions import AgentDefinition
 from genesis.contracts import CanonicalContractCatalog, ContractValidationError
+from genesis.model_gateway.budget.guard import BudgetExceeded
+from genesis.model_gateway.errors import ProviderFailure
 from genesis.model_gateway.interfaces import ModelGateway
 from genesis.model_gateway.types import ModelRequest
 from genesis.orchestration.delegation import (
@@ -205,6 +207,31 @@ class AgentRuntimeEngine:
                 decision = await self._planner.next_action(definition, planner_request, state)
             except RuntimeFailure:
                 raise
+            except ProviderFailure as exc:
+                state = state.model_copy(
+                    update={
+                        "usage_unavailable": state.usage_unavailable or exc.usage_unknown,
+                        "cost_unavailable": True,
+                    }
+                )
+                await self._require_not_cancelled(state)
+                raise fail(
+                    state,
+                    exc.code,
+                    "The governed model provider failed safely.",
+                    StopReason.MODEL_FAILED,
+                    retryable=exc.retryable,
+                    output_state="NEEDS_REVIEW",
+                ) from None
+            except BudgetExceeded as exc:
+                if exc.response is not None:
+                    state = account_model_response(state, exc.response)
+                raise fail(
+                    state,
+                    "BUDGET_EXCEEDED",
+                    "The governed model budget was exceeded.",
+                    StopReason.BUDGET_EXHAUSTED,
+                ) from None
             except Exception as exc:
                 raise fail(
                     state,

@@ -14,6 +14,7 @@ from genesis.contracts import CanonicalContractCatalog
 from genesis.control_plane.factory.prompts import version_prompt
 from genesis.model_gateway.interfaces import ModelGateway
 from genesis.model_gateway.types import ModelRequest
+from genesis.runtime.assistant.sources import data_only, display
 from genesis.runtime.limits import ExecutionBudget
 
 if TYPE_CHECKING:
@@ -93,11 +94,13 @@ class ResearchEngine:
         model_gateway: ModelGateway,
         context_provider: ContextProvider | None = None,
         orchestrator: ResearchOrchestrator | None = None,
+        production: bool = False,
     ) -> None:
         self._contracts = contracts
         self._model_gateway = model_gateway
         self._context_provider = context_provider
         self._orchestrator = orchestrator
+        self._production = production
 
     async def research(self, payload: Mapping[str, Any]) -> dict[str, Any]:
         request = self._contracts.validate(RESEARCH_REQUEST_SCHEMA, payload)
@@ -133,6 +136,20 @@ class ResearchEngine:
             raise ResearchOutputInvalid(
                 "Research requires at least one canonical evidence reference"
             )
+        if self._production:
+            from genesis.runtime.agentic.state import known_evidence
+
+            admitted = known_evidence(
+                {"execution_context": dict(execution_context), "context_bundle": validated_context}
+            )
+            if set(admitted) != set(evidence_by_id) or any(
+                ref.get("run_id") != request["run_id"]
+                or ref.get("correlation_id") != request["correlation_id"]
+                for ref in admitted.values()
+            ):
+                raise ResearchOutputInvalid(
+                    "Production research requires current admitted evidence with exact run lineage"
+                )
 
         budget_payload = execution_context.get("execution_budget")
         max_tokens = 2_000
@@ -142,7 +159,41 @@ class ResearchEngine:
             max_tokens = min(max_tokens, int(budget_payload["max_tokens"]))
         prompt = _RESEARCH_PROMPT.render(
             question=str(request["question"]),
-            context_bundle=json.dumps(validated_context, sort_keys=True),
+            context_bundle=json.dumps(
+                {
+                    "items": [
+                        {
+                            key: data_only(item[key])
+                            for key in (
+                                "key",
+                                "value",
+                                "source_id",
+                                "evidence_id",
+                                "content_hash",
+                                "instruction_authority",
+                            )
+                            if key in item
+                        }
+                        for item in validated_context.get("items", [])
+                    ],
+                    "evidence_refs": [
+                        {
+                            key: ref.get(key)
+                            for key in (
+                                "evidence_id",
+                                "source_id",
+                                "content_hash",
+                                "freshness",
+                                "instruction_authority",
+                            )
+                        }
+                        for ref in evidence_by_id.values()
+                    ],
+                }
+                if self._production
+                else validated_context,
+                sort_keys=True,
+            ),
         )
         response = await self._model_gateway.complete(
             ModelRequest(
@@ -155,14 +206,60 @@ class ResearchEngine:
                 prompt_version=_RESEARCH_PROMPT.version,
                 messages=({"role": "user", "content": prompt},),
                 requested_max_tokens=max_tokens,
-                budget=ExecutionBudget(max_tokens=max_tokens, max_steps=1),
+                budget=ExecutionBudget.model_validate(dict(budget_payload))
+                if isinstance(budget_payload, Mapping)
+                else ExecutionBudget(max_tokens=max_tokens, max_steps=1),
             )
         )
         try:
             draft = _ResearchDraft.model_validate_json(response.content)
         except ValidationError as exc:
             raise ResearchOutputInvalid("ModelGateway returned an invalid research draft") from exc
-        findings = [self._finding(item, evidence_by_id) for item in draft.findings]
+        identifiers = {item.finding_id for item in draft.findings}
+        if len(identifiers) != len(draft.findings) or any(
+            not item.finding_ids or not set(item.finding_ids).issubset(identifiers)
+            for item in draft.recommendations
+        ):
+            raise ResearchOutputInvalid("Recommendations require exact finding references")
+        if self._production:
+            bound_ids = {
+                item: self._identifier("finding", str(request["run_id"]) + ":" + item)
+                for item in identifiers
+            }
+            for finding in draft.findings:
+                values = [
+                    item.get("value")
+                    for item in validated_context.get("items", [])
+                    if item.get("evidence_id") in finding.evidence_ids
+                    and item.get("instruction_authority") is False
+                ]
+                if not values:
+                    raise ResearchOutputInvalid(
+                        "Factual research findings require current canonical source values"
+                    )
+                finding.finding_id = bound_ids[finding.finding_id]
+                # Free prose from the provider remains advisory; factual findings are canonical.
+                finding.statement = "\n\n".join(display(data_only(value)) for value in values)[
+                    :18000
+                ]
+                finding.domain = str(request.get("domain", "TECHNOLOGY"))
+            for recommendation in draft.recommendations:
+                recommendation.finding_ids = [
+                    bound_ids[item] for item in recommendation.finding_ids
+                ]
+                recommendation.recommendation_id = self._identifier(
+                    "recommendation",
+                    str(request["run_id"]) + ":" + recommendation.recommendation_id,
+                )
+        findings = [
+            self._finding(
+                item.model_copy(
+                    update={"domain": item.domain or str(request.get("domain", "TECHNOLOGY"))}
+                ),
+                evidence_by_id,
+            )
+            for item in draft.findings
+        ]
         recommendations = [
             self._recommendation(item, evidence_by_id) for item in draft.recommendations
         ]

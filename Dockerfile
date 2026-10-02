@@ -15,6 +15,7 @@ RUN groupadd --system genesis && useradd --system --gid genesis --home-dir /app 
 COPY pyproject.toml README.md ./
 RUN --mount=type=cache,target=/root/.cache/pip python -c "import subprocess, tomllib; project = tomllib.load(open('pyproject.toml', 'rb')); subprocess.check_call(['python', '-m', 'pip', 'install', *project['build-system']['requires'], *project['project']['dependencies'], *project['project']['optional-dependencies']['frameworks']])"
 COPY src ./src
+COPY scripts ./scripts
 RUN --mount=type=cache,target=/root/.cache/pip python -m pip install --no-deps --no-build-isolation .
 COPY --from=contracts schemas /contracts/schemas
 COPY --from=contracts events /contracts/events

@@ -65,6 +65,7 @@ class ModelUsage(BaseModel):
     output_tokens: int = Field(default=0, ge=0)
     estimated_cost: float | None = Field(default=None, ge=0)
     route_id: str | None = Field(default=None, min_length=1)
+    provider_request_id: str | None = None
 
     @property
     def total_tokens(self) -> int:
@@ -140,6 +141,9 @@ class AgenticRuntimeState(BaseModel):
     output_tokens: int = Field(default=0, ge=0)
     estimated_cost: float = Field(default=0, ge=0)
     route_ids: tuple[str, ...] = ()
+    provider_request_ids: tuple[str, ...] = ()
+    cost_unavailable: bool = False
+    usage_unavailable: bool = False
     max_tokens: int
     max_cost: float | None = None
 

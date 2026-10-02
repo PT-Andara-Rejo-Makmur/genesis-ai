@@ -1,6 +1,6 @@
 import hashlib
 import json
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 from fastapi import APIRouter, Depends, Request
 
@@ -8,7 +8,7 @@ from genesis import __version__
 from genesis.agents.definitions import AgentDefinition
 from genesis.api.auth import verify_service_token
 from genesis.api.errors import InternalBoundaryError
-from genesis.api.integration import research_gateway, run_deterministic_invocation
+from genesis.api.integration import research_gateway, run_runtime_invocation
 from genesis.api.models import HealthResponse, IntegrationDiagnosticResponse, SystemInfoResponse
 from genesis.config import Settings
 from genesis.contracts import CanonicalContractCatalog, ContractValidationError
@@ -23,6 +23,9 @@ from genesis.evals import (
     EvaluationRunner,
     EvaluationSubjectSnapshot,
 )
+from genesis.model_gateway.composition import build_model_gateway, provider_readiness
+from genesis.model_gateway.errors import ProviderFailure
+from genesis.model_gateway.types import ProviderReadiness
 from genesis.observability.correlation import current_correlation_id
 from genesis.research import (
     ExternalResearchBoundary,
@@ -84,6 +87,26 @@ async def integration_diagnostic(_request: Request) -> IntegrationDiagnosticResp
     return IntegrationDiagnosticResponse(correlation_id=current_correlation_id())
 
 
+@router.get("/models/readiness", response_model=ProviderReadiness)
+async def model_provider_readiness(
+    request: Request,
+    policy_ref: Literal[
+        "ara.production",
+        "policy.fast",
+        "policy.standard",
+        "policy.reasoning",
+        "policy.coding",
+        "policy.critical",
+        "policy.evidence-bound-research.v1",
+    ] = "ara.production",
+) -> ProviderReadiness:
+    return await provider_readiness(
+        request.app.state.settings,
+        client=getattr(request.app.state, "provider_http_client", None),
+        policy_ref=policy_ref,
+    )
+
+
 @router.post("/agent-runs")
 async def execute_agent_run(payload: dict[str, Any], request: Request) -> dict[str, Any]:
     """Validate one Backend-issued envelope and delegate execution to AgentRuntimeEngine."""
@@ -131,19 +154,29 @@ async def execute_agent_run(payload: dict[str, Any], request: Request) -> dict[s
                 "Runtime authorization must identify the canonical run request.",
                 status_code=422,
             )
-        if run_request.get("execution_mode") != "TEST" or not settings.test_runtime_enabled:
+        mode = run_request.get("execution_mode", "NORMAL")
+        if (mode == "TEST" and not settings.test_runtime_enabled) or (
+            mode == "NORMAL" and not settings.production_runtime_enabled
+        ):
             raise InternalBoundaryError(
                 "MODEL_ROUTE_NOT_CONFIGURED",
-                "Only the explicitly enabled deterministic TEST runtime is configured.",
+                "The requested model runtime route is not configured.",
                 status_code=503,
             )
-        return await run_deterministic_invocation(
+        if mode == "NORMAL" and authorization.lifecycle_state != "ACTIVE":
+            raise InternalBoundaryError(
+                "LIFECYCLE_NOT_ACTIVE",
+                "NORMAL execution requires ACTIVE Backend authorization.",
+                status_code=422,
+            )
+        return await run_runtime_invocation(
             settings=settings,
             contracts=contracts,
             definition=definition,
             run_request=run_request,
             authorization=authorization,
             http_client=getattr(request.app.state, "backend_http_client", None),
+            provider_http_client=getattr(request.app.state, "provider_http_client", None),
         )
     except InternalBoundaryError:
         raise
@@ -294,17 +327,21 @@ async def decide_research_source(
 
 
 @router.post("/research/run")
-async def run_deterministic_research(
+async def run_research(
     payload: dict[str, Any],
     request: Request,
 ) -> dict[str, Any]:
-    """Exercise canonical research reasoning with a deterministic TEST ModelGateway."""
+    """Use the same governed provider boundary under an explicit canonical execution mode."""
 
     settings: Settings = request.app.state.settings
-    if not settings.ENABLE_TEST_RUNTIME or settings.APP_ENV not in {"development", "test"}:
+    mode = payload.get("execution_mode", "TEST" if settings.test_runtime_enabled else "NORMAL")
+    production = mode == "NORMAL"
+    if (mode == "TEST" and not settings.test_runtime_enabled) or (
+        production and not settings.production_runtime_enabled
+    ):
         raise InternalBoundaryError(
             "TEST_RUNTIME_DISABLED",
-            "Deterministic research runtime is disabled.",
+            "The requested research model route is disabled.",
             status_code=403,
         )
     correlation_id = current_correlation_id()
@@ -319,19 +356,28 @@ async def run_deterministic_research(
     if len(evidence_refs) != 1 or not isinstance(evidence_refs[0], dict):
         raise InternalBoundaryError(
             "RESEARCH_EVIDENCE_REQUIRED",
-            "Deterministic research requires one Backend-issued evidence reference.",
+            "Research requires one Backend-issued evidence reference.",
             status_code=422,
         )
     try:
         engine = ResearchEngine(
             contracts=_catalog(settings),
-            model_gateway=research_gateway(
+            production=production,
+            model_gateway=build_model_gateway(
+                settings, client=getattr(request.app.state, "provider_http_client", None)
+            )
+            if production
+            else research_gateway(
                 evidence_id=str(evidence_refs[0]["evidence_id"]),
                 domain=str(payload.get("domain", "TECHNOLOGY")),
                 classification=str(payload["execution_context"]["data_classification"]),
             ),
         )
         return await engine.research(payload)
+    except ProviderFailure as exc:
+        raise InternalBoundaryError(
+            exc.code, "The governed research model provider is unavailable.", status_code=503
+        ) from None
     except (ContractValidationError, ResearchOutputInvalid, KeyError, ValueError) as exc:
         raise InternalBoundaryError(
             "RESEARCH_CONTRACT_INVALID",
