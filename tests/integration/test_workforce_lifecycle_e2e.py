@@ -1,5 +1,7 @@
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import httpx
 import pytest
@@ -143,7 +145,9 @@ def workforce_registry() -> WorkforceRegistrySnapshot:
 
 
 @pytest.mark.asyncio
-async def test_factory_governance_runtime_tool_and_audit_e2e() -> None:
+async def test_factory_governance_runtime_tool_and_audit_e2e(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     genesis_contracts = CanonicalContractCatalog(CONTRACTS_ROOT)
     plan = await WorkforceFactory(
         capability_factory=CapabilityFactory(contracts=genesis_contracts)
@@ -192,7 +196,7 @@ async def test_factory_governance_runtime_tool_and_audit_e2e() -> None:
         BackendSettings(
             _env_file=None,
             APP_ENV="test",
-            DATABASE_URL="postgresql+asyncpg://alos:alos@localhost:5432/alos_test",
+            DATABASE_URL="postgresql+asyncpg://alos:alos@127.0.0.1:1/alos_test",
             GENESIS_BASE_URL="http://genesis.test",
             GENESIS_INTERNAL_TOKEN=TOKEN,
             ALOS_CONTRACTS_PATH=CONTRACTS_ROOT,
@@ -203,6 +207,10 @@ async def test_factory_governance_runtime_tool_and_audit_e2e() -> None:
         transport=httpx.ASGITransport(app=backend_app), base_url="http://backend.test"
     )
     backend_app.state.agent_run_authority = authority
+    # This test uses in-memory run authority; only the progress storage is a test double.
+    # The actual internal route still authenticates the callback and checks the run.
+    progress_repository = SimpleNamespace(append_progress=AsyncMock())
+    monkeypatch.setattr("alos.api.internal.routes.AraRepository", lambda _: progress_repository)
     genesis_app = create_genesis_app(
         GenesisSettings(
             _env_file=None,
@@ -274,6 +282,12 @@ async def test_factory_governance_runtime_tool_and_audit_e2e() -> None:
     assert completed.correlation_id == "corr_workforce_e2e"
     assert completed.usage_ref == f"urn:alos:usage:{completed.run_id}"
     assert completed.total_tokens == 6
+    assert progress_repository.append_progress.await_count > 0
+    for call in progress_repository.append_progress.await_args_list:
+        assert call.args[0] == completed.run_id
+        assert call.args[1] == "corr_workforce_e2e"
+        assert call.args[2] in {"RETRIEVING", "ANALYZING", "PREPARING"}
+        assert call.args[3].startswith("runtime.")
     steps = await authority.list_steps(completed.run_id)
     assert len(steps) == 1 and steps[0].tool_id == "diagnostic.echo"
     assert [record.outcome for record in backend_app.state.tool_audit_sink.records] == [
@@ -288,9 +302,7 @@ async def test_factory_governance_runtime_tool_and_audit_e2e() -> None:
         "run.started",
         "run.completed",
     }
-    assert expected_events.issubset(
-        {event.event_type for event in events}
-    )
+    assert expected_events.issubset({event.event_type for event in events})
 
 
 @pytest.mark.asyncio
