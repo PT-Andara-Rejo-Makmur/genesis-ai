@@ -210,6 +210,15 @@ async def run_runtime_invocation(
         internal_token=settings.ALOS_INTERNAL_TOKEN,
         client=http_client,
     )
+    from genesis.api.progress import BackendProgressObserver
+
+    progress = BackendProgressObserver(
+        base_url=settings.ALOS_BACKEND_BASE_URL,
+        internal_token=settings.ALOS_INTERNAL_TOKEN,
+        run_id=run_request["run_id"],
+        correlation_id=run_request["execution_context"]["correlation_id"],
+        client=http_client,
+    )
     try:
         business = definition.agent_id in {"ara.workspace-assistant", "ara.business-reader"}
         production = run_request.get("execution_mode") == "NORMAL"
@@ -246,8 +255,10 @@ async def run_runtime_invocation(
             model_gateway=gateway if business or production else DisabledModelGateway(),
             tool_client=tool_client,
             cancellation_probe=cancellation,
+            observer=progress,
         )
         return await engine.run(definition, run_request, authorization)
     finally:
+        await progress.close()
         await cancellation.close()
         await tool_client.close()

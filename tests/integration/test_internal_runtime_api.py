@@ -29,6 +29,17 @@ def invocation() -> dict:
 
 
 def backend_transport(request: httpx.Request) -> httpx.Response:
+    if request.method == "POST" and request.url.path == (
+        "/internal/v1/agent-runs/run_runtime_integration_001/progress"
+    ):
+        payload = json.loads(request.content)
+        assert set(payload) == {"event_key", "kind", "correlation_id"}
+        assert payload["kind"] in {"ANALYZING", "RETRIEVING", "PREPARING"}
+        assert payload["correlation_id"] == "corr_runtime_integration_001"
+        assert request.headers["X-Correlation-ID"] == payload["correlation_id"]
+        assert request.headers["Authorization"] == "Bearer integration-token"
+        assert int(payload["event_key"]) > 0
+        return httpx.Response(200, json={"accepted": True})
     if request.method == "GET" and request.url.path.endswith("/cancellation"):
         return httpx.Response(
             200,

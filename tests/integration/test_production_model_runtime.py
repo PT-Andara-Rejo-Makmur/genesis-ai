@@ -148,6 +148,17 @@ async def test_production_runtime_keeps_backend_authority_and_current_evidence(
     backend_requests = []
 
     async def backend(request: httpx.Request) -> httpx.Response:
+        if request.method == "POST" and request.url.path == (
+            "/internal/v1/agent-runs/run_provider/progress"
+        ):
+            payload = json.loads(request.content)
+            assert set(payload) == {"event_key", "kind", "correlation_id"}
+            assert payload["kind"] in {"ANALYZING", "RETRIEVING", "PREPARING"}
+            assert payload["correlation_id"] == "corr_provider"
+            assert request.headers["X-Correlation-ID"] == payload["correlation_id"]
+            assert request.headers["Authorization"].startswith("Bearer ")
+            assert int(payload["event_key"]) > 0
+            return httpx.Response(200, json={"accepted": True})
         if request.method == "GET":
             return httpx.Response(200, json={"cancellation_state": "NONE"})
         payload = json.loads(request.content)
