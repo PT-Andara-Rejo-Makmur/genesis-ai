@@ -5,8 +5,8 @@ import json
 
 from genesis.adapters.providers.nine_router import NineRouterProviderAdapter, ProviderFailure
 from genesis.config import Settings
-from genesis.model_gateway.composition import build_model_gateway
 from genesis.model_gateway.budget.guard import BudgetExceeded
+from genesis.model_gateway.composition import build_model_gateway
 from genesis.model_gateway.types import ModelRequest
 from genesis.runtime.limits import ExecutionBudget
 
