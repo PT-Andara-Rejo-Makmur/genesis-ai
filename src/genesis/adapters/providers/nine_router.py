@@ -197,15 +197,18 @@ class NineRouterProviderAdapter:
         result: ModelResponse | None = None
         try:
             model = self.select_model(request.policy_ref, await self.discover_models())
+            body: dict[str, Any] = {
+                "model": model,
+                "messages": list(request.messages),
+                "max_tokens": request.requested_max_tokens,
+                "stream": False,
+            }
+            if request.json_object_response:
+                body["response_format"] = {"type": "json_object"}
             document_response = await self._request(
                 "POST",
                 "/chat/completions",
-                body={
-                    "model": model,
-                    "messages": list(request.messages),
-                    "max_tokens": request.requested_max_tokens,
-                    "stream": False,
-                },
+                body=body,
             )
             document = self._document(document_response)
             choices = document.get("choices")

@@ -40,13 +40,13 @@ yang belum diimplementasikan tidak direpresentasikan sebagai package kosong.
 
 ## `blueprints`
 
-- `agents/`: format blueprint Agent deklaratif sebelum menjadi Definition atau Draft.
 - `skills/`: format `skill.yaml` dan `SKILL.md` yang dapat ditemukan secara progresif.
-- `workflows/`: template workflow stateful yang membutuhkan adapter orchestration.
-- `evaluators/`: profil evaluasi berbasis risiko dan taxonomy yang diperlukan.
-- `domain_profiles/`: constraint dan kosakata domain tanpa menanam kewenangan bisnis.
+- `skills/research/`: prosedur dan metadata untuk riset core, technology, management,
+  property_business dan property_market. Template tidak memberi izin tool atau approval.
 
-Setiap folder blueprint saat ini berisi README boundary, bukan contoh produksi palsu.
+Folder placeholder Agent/workflow/evaluator/domain-profile yang hanya berisi README
+telah diringkas ke [boundary blueprint](../blueprints/README.md). Definition runtime
+tetap berasal dari registry Backend, bukan folder template.
 
 ## `tests`
 

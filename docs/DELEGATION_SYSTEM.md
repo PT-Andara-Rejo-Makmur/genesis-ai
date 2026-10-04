@@ -13,13 +13,13 @@ child-run creation, persistence, audit, and server-side inheritance.
 The delegation snapshot is not independent authority. Before the planner can see `DELEGATE`,
 the runtime binds it to the current run ID, root run ID, exact parent Agent/version, and the
 current tenant/organization/workspace. Snapshot permissions, scopes, classification, and tools
-must be subsets of the current ExecutionContext and H5 effective tool intersection. Its parent
+must be subsets of the current ExecutionContext and effective runtime tool intersection. Its parent
 budget must fit inside the current `ExecutionBudget`; duplicated depth, child-count, and
 concurrency limits must be equal or narrower than that snapshot budget.
 
 ## Runtime flow
 
-The H5 loop accepts an internal `DELEGATE` action. It checks cancellation, validates the
+The iterative loop accepts an internal `DELEGATE` action. It checks cancellation, validates the
 deterministic intent locally, and calls the separate `DelegationBoundaryClient`. Delegation is
 not represented as a ToolRequest and GENESIS never invokes `AgentRuntimeEngine` recursively.
 The boundary returns a canonical `AgentRunResult`, including its authoritative child run ID.
@@ -63,13 +63,17 @@ catalog. Evidence returned by FAILED, TIMED_OUT, or CANCELLED children remains o
 
 One `ResearchDomainDelegationPolicy` supports TECHNOLOGY, PROPERTY_BUSINESS, MANAGEMENT, and
 PROPERTY_MARKET. It maps only explicit domain subtasks to exact authorized targets and preserves
-the parent's source-category, external-egress, cost, and classification ceilings. H7 query
-decomposition, comparison, conflict analysis, and recommendation intelligence are not present.
+the parent's source-category, external-egress, cost, and classification ceilings. Query
+decomposition, comparison, conflict analysis, and recommendation synthesis belong to
+the separate research pipeline rather than the delegation guard.
 Contradictory research constraints are rejected: an external source category or non-zero
 external cost cannot accompany disabled external research.
 
-## H9 handoff
+## Deployment composition
 
-H9 should canonicalize the temporary handoff projections and connect the boundary to Backend
-child-run authority. Backend must add persistence, audit, concurrency, cancellation propagation,
-retry, and tree-wide accounting without moving those responsibilities into GENESIS.
+Backend owns child-run creation, persistence, audit, limits and cancellation propagation.
+ARA can invoke a released business-reader child with narrowed scope and sources actually
+read by the parent. This supported path is covered by the cross-repository ARA smoke.
+The generic `DelegationBoundaryClient` remains a port: its existence does not certify
+every arbitrary child target, retry workflow or tree-wide billing integration.
+Never move those authority responsibilities into GENESIS to complete an adapter.

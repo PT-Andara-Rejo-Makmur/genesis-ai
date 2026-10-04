@@ -6,6 +6,7 @@ import json
 from genesis.adapters.providers.nine_router import NineRouterProviderAdapter, ProviderFailure
 from genesis.config import Settings
 from genesis.model_gateway.composition import build_model_gateway
+from genesis.model_gateway.budget.guard import BudgetExceeded
 from genesis.model_gateway.types import ModelRequest
 from genesis.runtime.limits import ExecutionBudget
 
@@ -30,11 +31,22 @@ async def main() -> int:
                 data_classification="PUBLIC",
                 messages=({"role": "user", "content": "Reply only OK."},),
                 requested_max_tokens=32,
-                budget=ExecutionBudget(max_tokens=256, max_steps=1),
+                # Provider-reported usage includes prompt and reasoning tokens, not
+                # just the requested visible reply. Keep a finite connectivity budget.
+                budget=ExecutionBudget(max_tokens=4096, max_steps=1),
             )
         )
     except ProviderFailure as exc:
         print(json.dumps({"status": "FAILED", "code": exc.code}))
+        return 1
+    except BudgetExceeded as exc:
+        response = exc.response
+        print(json.dumps({"status": "FAILED", "code": "BUDGET_EXCEEDED",
+                          "input_tokens": response.input_tokens if response else None,
+                          "output_tokens": response.output_tokens if response else None}))
+        return 1
+    if result.content.strip() != "OK":
+        print(json.dumps({"status": "FAILED", "code": "UNEXPECTED_SMOKE_REPLY"}))
         return 1
     print(
         json.dumps(

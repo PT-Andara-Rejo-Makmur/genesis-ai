@@ -278,7 +278,8 @@ async def test_production_runtime_keeps_backend_authority_and_current_evidence(
     if scenario == "success":
         assert result["status"] == "COMPLETED" and len(calls) == 2, result
         assert (
-            "amount: —" in result["output"]["answer"] and "action_proposal" not in result["output"]
+            "Nilai: belum tersedia" in result["output"]["answer"]
+            and "action_proposal" not in result["output"]
         )
         assert len(result["evidence_refs"]) == 1
         evidence = result["evidence_refs"][0]

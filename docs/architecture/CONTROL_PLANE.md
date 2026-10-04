@@ -1,6 +1,8 @@
 # Control Plane dan MCA
 
-Control Plane mengelola proposal capability serta lifecycle digital workforce. Outputnya berupa assessment, draft, finding, evaluation, atau recommendation untuk ALOS Backend.
+Control Plane menghasilkan proposal capability serta assessment digital workforce.
+Outputnya berupa draft, finding, evaluation, atau recommendation untuk ALOS Backend.
+Lifecycle, persistence, keputusan manusia dan release digital workforce tetap dimiliki Backend.
 
 MCA mengoordinasikan business work pada runtime melalui OrchestrationEngine. Hanya ada satu class `MasterCoordinator`; architecture regression test menegakkan invariant ini.
 

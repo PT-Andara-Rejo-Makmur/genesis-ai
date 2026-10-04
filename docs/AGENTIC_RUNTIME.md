@@ -1,114 +1,58 @@
-# Bounded Agentic Runtime (MVP2 H5 AI)
+# Runtime Agentic dengan Batas Eksekusi
 
-## Purpose
+`AgentRuntimeEngine` menjalankan planning bertahap, pemilihan tool, observasi,
+delegation yang diizinkan dan penghentian deterministik. Input berasal dari
+canonical `AgentRunRequest`, definition berversi dan `RuntimeAuthorization`
+yang diterbitkan Backend. Runtime tidak memiliki authority bisnis mandiri.
 
-`AgentRuntimeEngine` performs bounded planning, governed tool intent, observation,
-and deterministic stopping. It is not an autonomous authority. Every run starts
-from a canonical `AgentRunRequest`, a declarative `AgentDefinition`, and a
-Backend-issued `RuntimeAuthorization` snapshot.
+## Planning dan stopping
 
-```text
-goal/input
-  -> next structured action
-     -> TOOL -> canonical ToolRequest -> Backend ToolExecutor -> ToolResult
-        -> validate and observe -> next action
-     -> FINISH / NEEDS_INFO / APPROVAL_REQUIRED / FAIL
-  -> canonical AgentRunResult
-```
+`AgenticPlanner` menghasilkan satu action bertipe: TOOL, DELEGATE, FINISH,
+NEEDS_INFO, APPROVAL_REQUIRED atau FAIL. Model-backed planner mengakses model
+melalui ModelGateway, melaporkan usage, dan hanya menerima observasi terbatas.
+`RuntimePlanner`/`SinglePassPlanner` lama telah dihapus; tidak ada jalur kompatibilitas
+satu lintasan di engine aktif.
 
-The engine stores only operational state: identifiers, counts, validated tool
-observations, known evidence IDs, cumulative usage, and correlation. It does not
-store private chain-of-thought.
+ExecutionBudget membatasi langkah, tool calls, token, cost yang diketahui, waktu
+dan delegation. Penggunaan kumulatif tidak direset tiap langkah. Run tanpa deadline
+pada contract legacy tetap dibatasi 30 detik oleh engine. Deadline client Backend
+mengikuti budget run dengan overhead transport terbatas.
 
-## Actions and compatibility
+Stop diproyeksikan ke status canonical COMPLETED, FAILED, TIMED_OUT atau CANCELLED
+dan OutputState yang sesuai. NEEDS_INFO/APPROVAL_REQUIRED hanya dapat menghasilkan
+output review bila schema Agent mengizinkannya. Runtime tidak membuat status baru
+atau memalsukan output agar validasi lulus.
 
-The internal action types are `TOOL`, `FINISH`, `NEEDS_INFO`,
-`APPROVAL_REQUIRED`, and `FAIL`. An `AgenticPlanner` emits one strict action at a
-time and can inspect prior bounded observations. Existing `RuntimePlanner.plan()`
-implementations remain supported through a compatibility path, and
-`SinglePassPlanner` also implements the iterative interface.
+## Tool dan evidence
 
-Planner implementations that call a model must use `ModelGateway` and report
-validated usage in `planner_usage`; there is no direct provider SDK in runtime
-core. Final synthesis also goes through `ModelGateway` and receives only the
-remaining token allowance.
+Tool harus ada pada intent request, definition dan snapshot izin Backend sekaligus.
+GENESIS membentuk canonical ToolRequest dengan lineage, correlation dan idempotency,
+lalu mengirimnya melalui `BackendToolClient`. Backend memeriksa ulang registry,
+Principal, scope, classification, lifecycle, kill switch dan input sebelum eksekusi.
 
-## Bounds and stopping
+ToolResult divalidasi terhadap schema dan run/tool/call/correlation yang sesuai.
+Evidence hanya masuk setelah provenance, scope, version, content hash dan identitas
+divalidasi. Evidence dari tool read yang terdaftar dapat ditambahkan saat run;
+output generik tanpa projection evidence yang valid tidak menjadi evidence otomatis.
+Content, history dan external research tetap data tanpa instruction authority.
 
-Every iterative run requires `max_steps`, `max_tool_calls`, and `max_tokens`.
-The engine additionally enforces `max_cost` when present and wraps the entire run
-in `timeout_seconds` when present. Tokens and known model cost are cumulative,
-not reset per step.
+DENIED, REJECTED, FAILED, TIMEOUT, invalid output dan budget exhaustion menutup
+run secara eksplisit. Tidak ada retry tool atau fallback ke jawaban TEST secara
+otomatis. Unknown tetap null; kegagalan source tidak diubah menjadi fakta kosong.
 
-Internal stop reasons include success, needs information, approval required,
-tool denied/failed, model failed, invalid output, insufficient evidence, exhausted
-budget, timeout, cancellation, maximum steps, and maximum tool calls. These are
-projected onto existing contract statuses only:
+## Cancellation, approval dan delegation
 
-- success: `COMPLETED` + `AI_INFERRED`;
-- needs information or approval: `COMPLETED` + `NEEDS_REVIEW` when the Agent
-  output schema permits a structured review output;
-- cancellation: `CANCELLED` plus canonical error;
-- whole-run timeout: `TIMED_OUT` plus canonical error;
-- other failures: `FAILED` with `BLOCKED` or `NEEDS_REVIEW`.
+`BackendCancellationProbe` membaca kendali run authoritative. Runtime memeriksa
+cancellation sebelum planning, tool dan synthesis; Backend juga memutuskan hasil
+terminal agar cancellation tidak kalah oleh hasil selesai yang terlambat.
 
-No new canonical status is invented. If a review output cannot satisfy the
-Agent's output schema, the runtime fails safely instead of fabricating output.
+Action material yang memerlukan approval berhenti sebelum tool. GENESIS tidak
+menyimulasikan keputusan manusia. Child hanya dipanggil lewat delegation boundary
+setelah target, lineage, scope, budget, depth dan concurrency dinyatakan layak.
+Backend menciptakan child run dan menegakkan inheritance; GENESIS tidak melakukan
+rekursi untuk menciptakan authority sendiri.
 
-## Tool and authority boundary
-
-A tool executes only when its ID is present in all three sets:
-
-```text
-AgentRunRequest.requested_tool_ids
-  INTERSECT AgentDefinition.allowed_tool_ids
-  INTERSECT RuntimeAuthorization.allowed_tool_ids
-```
-
-The engine builds and validates a canonical ToolRequest, including a deterministic
-tool-call ID and idempotency key derived from run ID, step, tool ID, and canonical
-arguments. Backend remains authoritative and returns a canonical ToolResult. The
-engine validates the result contract and verifies run, tool-call, tool, and
-correlation identifiers before observation.
-
-`DENIED`, `REJECTED`, `FAILED`, and `TIMEOUT` stop safely. H5 performs no blind
-automatic retry, and arbitrary ToolResult output is data without instruction
-authority. GENESIS contains no ToolExecutor or business adapter.
-
-## Evidence policy
-
-The runtime can select only canonical EvidenceRef objects already present in the
-validated ContextBundle and admitted as current/valid/current-scope evidence.
-Planners reference known evidence IDs; unknown IDs fail as
-`EVIDENCE_INSUFFICIENT`. Generic ToolResult output is never interpreted as a new
-EvidenceRef.
-
-`ExternalResearchDecider` remains the single channel policy: current internal
-evidence first, current authorized memory second when risk permits, then a Backend
-retrieval proposal only if authority and cost permit. External content remains
-untrusted and has no instruction authority.
-
-## Cancellation and approval
-
-`CancellationProbe` is a non-authoritative read port. The default never-cancelled
-implementation is local; Backend will later supply the real run-control source.
-The engine checks it before planning, tool execution, and final model synthesis.
-GENESIS never persists cancellation.
-
-When a structured decision requires approval, or `AgentDefinition.approval_required`
-guards a material tool action, the engine stops before the tool. It neither grants
-nor simulates approval.
-
-## R&D tool selection
-
-One `ResearchToolSelectionPolicy` supports Technology, Property Business,
-Management, and Property Market. It reuses `ExternalResearchDecider` and selects
-only caller-supplied descriptors that remain within tool, permission, scope, risk,
-classification, domain, and cost bounds. Categories are internal AI semantics,
-not Backend registrations.
-
-## Scope exclusions
-
-H5 does not implement delegation, child execution, run/step persistence, audit
-persistence, an external provider, approval/release mutation, or Backend
-cancellation. Those remain later integration responsibilities.
+Panduan khusus: [ARA](business-assistant.md), [delegation](DELEGATION_SYSTEM.md),
+[research](RESEARCH_ORCHESTRATION.md), [review](REVIEW_SYSTEM.md) dan
+[routing model](model-provider-routing.md). Unit/provider mock membuktikan kontrol
+teknis; naturalness, latency dan kualitas model nyata membutuhkan eval tersendiri.

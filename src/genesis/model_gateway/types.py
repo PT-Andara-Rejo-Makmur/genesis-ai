@@ -16,6 +16,7 @@ class ModelRequest(BaseModel):
     prompt_version: str | None = Field(default=None, min_length=1)
     messages: tuple[dict[str, Any], ...] = Field(min_length=1)
     requested_max_tokens: int = Field(ge=1)
+    json_object_response: bool = False
     budget: ExecutionBudget
 
 

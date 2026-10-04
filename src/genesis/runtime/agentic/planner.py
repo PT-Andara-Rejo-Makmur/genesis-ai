@@ -89,6 +89,7 @@ class ModelGatewayAgenticPlanner:
                     },
                 ),
                 requested_max_tokens=state.remaining_tokens,
+                json_object_response=True,
                 budget=remaining_budget,
             )
         )

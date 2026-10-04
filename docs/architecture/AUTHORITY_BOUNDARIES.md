@@ -4,4 +4,7 @@ ALOS Backend memiliki authentication, RBAC, tenant authority, business state, To
 
 GENESIS menghasilkan ToolRequest, AIReviewResult, finding, recommendation, draft, dan backlog candidate. Artefak tersebut tidak mengeksekusi business action atau menjadi approval.
 
-Provider adapter berada di belakang ModelGateway. Connector MCP berada di belakang tool boundary. PostgreSQL/pgvector target GENESIS hanya menyimpan runtime/reference/memory intelligence dan tidak menjadi business database.
+Provider adapter berada di belakang ModelGateway. Connector MCP berada di belakang tool boundary.
+Deployment saat ini tidak memberi GENESIS credential, network atau database persistence sendiri.
+Run, percakapan, memory authoritative dan evidence disimpan Backend. Persistence AI terpisah
+memerlukan perubahan arsitektur eksplisit sebelum dapat diaktifkan.

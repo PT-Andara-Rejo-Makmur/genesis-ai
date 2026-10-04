@@ -25,7 +25,7 @@ ALOS Backend tetap menjadi sumber kebenaran. GENESIS melakukan penalaran dan orc
 
 ## GENESIS Control Plane dan MCA
 
-- **GENESIS Control Plane** menghasilkan proposal draft capability dan Agent untuk governance Backend. Lifecycle, approval, activation, supervision, remediation, dan kendali sustainability tetap berada di Backend atau direncanakan untuk integrasi berikutnya.
+- **GENESIS Control Plane** menghasilkan proposal draft capability dan Agent untuk governance Backend. Lifecycle, approval, activation, supervision, remediation, dan kendali sustainability authoritative tetap milik Backend.
 - **MCA (AI Master Coordinator)** adalah satu-satunya orchestrator utama runtime bisnis. MCA mengoordinasikan pekerjaan bertahap dan delegation melalui interface orchestration.
 
 Control Plane tidak menjadi orchestrator kedua. MCA tidak mengambil alih lifecycle workforce.
@@ -42,7 +42,7 @@ Repository ini tidak memiliki autentikasi pengguna, otoritas kebijakan RBAC, sta
 - **LangGraph**: adapter untuk workflow bertahap, delegation, pause/resume, state, checkpoint/recovery, dan gerbang manusia. Graph tidak digunakan untuk masalah sederhana.
 - **MCP**: adapter interoperabilitas connector di belakang boundary tool tertata kelola.
 - **Hermes**: hanya sebagai referensi arsitektur; source code dan model autonomy tidak disalin.
-- **PostgreSQL/pgvector**: target persistence untuk runtime/referensi dan arsitektur memory, bukan otoritas database bisnis.
+- **PostgreSQL/pgvector**: persistence bisnis, run, history dan evidence disediakan Backend. GENESIS tidak mempunyai database atau vector store mandiri pada deployment saat ini.
 
 Framework hanya boleh digunakan di `src/genesis/adapters/`. Domain bergantung pada protocol, bukan pada implementasi framework.
 
@@ -119,7 +119,7 @@ Rangkaian pengujian bersifat deterministik dan tidak memanggil API provider. Pem
 ## Docker
 
 ```bash
-docker build -t genesis-ai:local .
+docker build --build-context contracts=../alos-contracts -t genesis-ai:local .
 docker run --rm --env-file .env -p 8100:8100 genesis-ai:local
 ```
 
@@ -151,7 +151,7 @@ Aksi bisnis mengikuti `Agent -> ToolRequest -> ALOS Backend -> ToolExecutor -> T
 Runtime generik berada pada `AgentRuntimeEngine`: komponen ini mengonsumsi context dan snapshot
 authorization dari Backend, menjalankan perencanaan melalui protocol, menerapkan budget eksekusi,
 dan menghasilkan `AgentRunResult` canonical. Otoritas run dan persistence tidak berada di
-GENESIS. Lihat [Split Runtime MVP-1](docs/MVP1_RUNTIME_SPLIT.md).
+GENESIS. Lihat [runtime agentic](docs/AGENTIC_RUNTIME.md).
 
 ## Alur kerja pengembangan
 
@@ -161,4 +161,10 @@ GENESIS. Lihat [Split Runtime MVP-1](docs/MVP1_RUNTIME_SPLIT.md).
 4. Tambahkan taxonomy pengujian berbasis risiko.
 5. Jalankan seluruh gerbang mutu dan dokumentasikan perubahan authority/budget/delegation.
 
-Dokumentasi: [Arsitektur](ARCHITECTURE.md), [Struktur Folder](docs/FOLDER_STRUCTURE.md), [Arsitektur Agent](docs/AGENT_ARCHITECTURE.md), [Migrasi Intelligence MVP-1](docs/MVP1_INTELLIGENCE_MIGRATION.md), [Migrasi Knowledge dan Research MVP-1](docs/MVP1_KNOWLEDGE_RESEARCH_MIGRATION.md), [Sistem Skill](docs/SKILL_SYSTEM.md), [Orchestration](docs/ORCHESTRATION.md), dan [Sistem Review](docs/REVIEW_SYSTEM.md).
+Mulai dari [indeks dokumentasi](docs/README.md), [runtime ARA](docs/business-assistant.md),
+[routing model](docs/model-provider-routing.md), [sistem Skill](docs/SKILL_SYSTEM.md),
+[delegation](docs/DELEGATION_SYSTEM.md), dan [review/assurance](docs/REVIEW_SYSTEM.md).
+NORMAL memakai adapter 9Router melalui ModelGateway; TEST hanya tersedia dengan opt-in
+non-production. Konfigurasi/discovery model tidak membuktikan kuota inference atau kualitas
+percakapan. Status model nyata dan gate produksi dicatat pada
+[readiness lintas repository](https://github.com/PT-Andara-Rejo-Makmur/alos-infra/blob/development/docs/PRODUCTION_READINESS_2026-10-04.md).

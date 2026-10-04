@@ -139,6 +139,24 @@ async def test_completion_preserves_transport_and_authoritative_telemetry(
 
 
 @pytest.mark.asyncio
+async def test_structured_planner_requests_json_without_changing_usage() -> None:
+    def handle(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET":
+            return httpx.Response(200, json={"data": [{"id": "fixture-model"}]})
+        payload = json.loads(request.content)
+        assert payload["response_format"] == {"type": "json_object"}
+        assert payload["max_tokens"] == 70 and payload["stream"] is False
+        return httpx.Response(200, json=completion())
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as client:
+        result = await NineRouterProviderAdapter(configuration(), client=client).complete(
+            model_request(json_object_response=True), route_id="nine_router"
+        )
+    assert result.input_tokens == 10 and result.output_tokens == 20
+    assert result.cost is None and result.provider_request_id == "request_transport"
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "body_id, header_id, expected",
     [("body-id", "header-id", "body-id"), (None, "header-id", "header-id"), (None, None, None)],

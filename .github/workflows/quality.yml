@@ -44,7 +44,12 @@ jobs:
           cache-dependency-path: genesis-ai/pyproject.toml
 
       - name: Pasang dependency dan framework adapter
-        run: python -m pip install -e ../alos-backend -e ".[dev,frameworks]"
+        run: |
+          python -m pip install --upgrade 'pip>=26.2.1,<27' 'pip-audit>=2.9,<3'
+          python -m pip install -e ../alos-backend -e ".[dev,frameworks]"
+
+      - name: Audit dependency security
+        run: python -m pip_audit --skip-editable
 
       - name: Ruff
         run: ruff check .

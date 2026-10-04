@@ -1,8 +1,8 @@
 # Research Orchestration
 
-H7 adds one generic research-intelligence pipeline for TECHNOLOGY,
-PROPERTY_BUSINESS, MANAGEMENT, and PROPERTY_MARKET. It composes the existing
-H4 memory input, H5 governed retrieval selection, H6 validated child evidence,
+The generic research-intelligence pipeline supports TECHNOLOGY,
+PROPERTY_BUSINESS, MANAGEMENT, and PROPERTY_MARKET. It composes governed
+memory input, bounded retrieval selection and validated child evidence,
 and the canonical `ResearchEngine` result boundary. It does not create a second
 runtime, tool executor, or authority source.
 
@@ -30,7 +30,7 @@ use strict JSON projections, report usage, and receive only bounded operational
 data. No hidden chain of thought is requested or persisted.
 
 Canonical `ExecutionBudget.max_tokens` is optional. Its absence means no
-canonical token-specific ceiling was supplied, not zero available tokens. H7
+canonical token-specific ceiling was supplied, not zero available tokens. The pipeline
 therefore applies one finite internal 4,000-token ceiling across planning, claim
 extraction, and recommendation synthesis. An explicit canonical `max_tokens`
 always replaces that default with the narrower/authoritative total. Per-call
@@ -58,7 +58,7 @@ depth only; Backend remains authoritative for actual billing and accounting.
 
 ## Relevance and canonical admission
 
-Every ContextBundle, Memory, validated H6 child, and provider item passes the
+Every ContextBundle, Memory, validated child, and provider item passes the
 same `ResearchEvidenceAdmissionPolicy` before claim or recommendation model
 input. It validates the canonical EvidenceRef, exact tenant/organization/
 workspace identity, scope subset, classification narrowing, VALID status,
@@ -81,7 +81,7 @@ remains relevant but receives conservative quality/confidence treatment.
 Every item is checked deterministically for tenant, organization, workspace,
 scope, classification, validation, provenance, freshness, reliability, and
 instruction authority. External evidence must remain `UNTRUSTED` and
-non-instructional. Completed and validated H6 child evidence may enter the
+non-instructional. Completed and validated child evidence may enter the
 catalog; failed, timed-out, cancelled, or invalid child evidence does not.
 
 Quality is monotonic: stronger reliability/freshness may increase usability,
@@ -112,14 +112,15 @@ recommendation list is empty with an explicit limitation.
 
 ## Canonical boundary
 
-H7 projections are internal and immutable. The public result is projected into
-the existing Contracts 1.5.0 `ResearchResult` and validated before return. No
-H7-only fields leak into the canonical payload. `ResearchEngine` remains the
+Research projections are internal and immutable. The public result is projected into
+the existing canonical Contracts `ResearchResult` and validated before return. No
+internal-only fields leak into the canonical payload. `ResearchEngine` remains the
 single public research result path; the legacy flow remains the default unless
-an H7 orchestrator is explicitly composed.
+a research orchestrator is explicitly composed.
 
 ## Non-goals
 
-H7 has no direct HTTP, provider SDK, database, vector-store client, persistence,
-source registry, approval mutation, backlog mutation, or `ToolExecutor`. Backend
-integration and contract canonicalization remain later handoff work.
+This pipeline has no direct HTTP, provider SDK, database, vector-store client, persistence,
+source registry, approval mutation, backlog mutation, or `ToolExecutor`. Backend owns those authoritative operations. Generic evidence-provider ports
+require their own deployment composition; their existence does not prove a
+live external research connector or production acceptance.

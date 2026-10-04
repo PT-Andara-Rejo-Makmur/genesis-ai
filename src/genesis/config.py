@@ -2,9 +2,9 @@
 
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Self
 
-from pydantic import AnyHttpUrl, Field, SecretStr, TypeAdapter, field_validator
+from pydantic import AnyHttpUrl, Field, SecretStr, TypeAdapter, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -50,6 +50,17 @@ class Settings(BaseSettings):
         if url.username or url.password or url.query or url.fragment:
             raise ValueError("Router base URL must not contain credentials, query, or fragment")
         return str(url).rstrip("/")
+
+    @model_validator(mode="after")
+    def require_deployed_router_tls(self) -> Self:
+        if (
+            self.APP_ENV in {"staging", "production"}
+            and self.production_runtime_enabled
+            and self.NINE_ROUTER_BASE_URL
+            and not self.NINE_ROUTER_BASE_URL.startswith("https://")
+        ):
+            raise ValueError("Staging/production model traffic requires an HTTPS router endpoint")
+        return self
 
     @property
     def production_runtime_enabled(self) -> bool:

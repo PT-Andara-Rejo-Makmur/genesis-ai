@@ -18,7 +18,7 @@ GENESIS alone receives these environment variables:
 
 ```dotenv
 DEFAULT_MODEL_ROUTE=nine_router
-NINE_ROUTER_BASE_URL=http://103.93.135.49:20128/v1
+NINE_ROUTER_BASE_URL=
 NINE_ROUTER_API_KEY=
 NINE_ROUTER_TIMEOUT_SECONDS=10
 NINE_ROUTER_MODEL_DEFAULT=
@@ -33,16 +33,16 @@ NINE_ROUTER_MAXIMUM_CLASSIFICATION=INTERNAL
 Inject the key through the deployment environment or secret manager. Do not put it in a
 Dockerfile, image, Git, shell transcript, request trace, or browser configuration. The typed
 secret is excluded from settings repr. Base URLs reject userinfo, query, and fragment.
-Changing to HTTPS or a private endpoint needs only an environment change.
+Configure the verified HTTPS endpoint. Staging and production reject plain HTTP.
 
 `DEFAULT_MODEL_ROUTE=disabled` is the configuration kill switch and selects the existing
 DisabledProviderAdapter. GENESIS code defaults to disabled. Staging/production Infra config
 selects nine_router but leaves its key blank, so readiness remains MISCONFIGURED until configured.
 Local/integration config defaults to disabled. No production failure falls back to a test answer.
 
-The current public HTTP endpoint provides no transport encryption: bearer credentials and
-authorized business context can be observed on that network path. Deployment should move to
-HTTPS or a protected private transport. Authorization headers and sensitive messages are never logged.
+Public HTTP defaults have been removed. HTTP mock endpoints remain supported for isolated
+development/test fixtures; business deployments require HTTPS. Authorization headers and
+sensitive messages are never logged.
 
 ## Discovery, readiness, and routing
 

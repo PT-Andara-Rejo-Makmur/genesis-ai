@@ -1,4 +1,4 @@
-# GENESIS Memory Intelligence (MVP2 H4 AI)
+# GENESIS Memory Intelligence
 
 ## Status and boundary
 
@@ -7,10 +7,12 @@ Backend-issued `ExecutionContext` remains the maximum authority for tenant,
 organization, workspace, scope, classification, permissions, roles, and tools.
 
 GENESIS does not own a memory database, vector store, retention lifecycle, audit
-log, or persistence endpoint. Canonical contracts version 1.5.0 does not yet define
-`MemoryRecord`, `MemoryQuery`, or `MemoryWrite`. H4 AI therefore uses immutable
-internal runtime projections and a framework-neutral `MemoryRetrievalPort`. A real
-adapter is pending H4 Contracts/Backend work; no route or tool ID is invented here.
+log, or persistence endpoint. `MemoryRecord`, `MemoryQuery`, and `MemoryWrite`
+are internal immutable projections behind `MemoryRetrievalPort`; the
+`schemas/memory/` directory does not publish those canonical payloads. Backend
+has governed memory persistence and ARA supplies scoped historical context.
+This does not make chat history organizational memory or connect GENESIS directly
+to a vector store. Any additional cross-service memory transport requires Contracts.
 
 ## Ownership
 
